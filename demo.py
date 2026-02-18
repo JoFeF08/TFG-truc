@@ -1,7 +1,9 @@
 import random
+import sys
 from truc.env import TrucEnv
 from truc.cartes_accions import ACTION_LIST
 from truc.rols.player.player_huma import HumanPlayer
+from truc.rols.player.player_random import RandomPlayer
 
 def get_config_from_user():
     """Demana a l'usuari la configuració del joc"""
@@ -18,6 +20,29 @@ def get_config_from_user():
         except ValueError:
             print("Si us plau, introdueix un número vàlid.")
     
+    # Tipus de jugadors
+    player_classes = {}
+    print("\nTipus de jugadors disponibles:")
+    print("  0: Humà")
+    print("  1: Aleatori (Random)")
+    
+    for i in range(num_jugadors):
+        while True:
+            try:
+                p_type = input(f"Tipus per al Jugador {i} (0=Humà, 1=Random): ").strip()
+                p_type = int(p_type) if p_type else 0
+                
+                if p_type == 0:
+                    player_classes[i] = HumanPlayer
+                    break
+                elif p_type == 1:
+                    player_classes[i] = RandomPlayer
+                    break
+                else:
+                    print("Opció no vàlida (0 o 1).")
+            except ValueError:
+                print("Introdueix un número (0 o 1).")
+
     # Número de cartes per jugador
     while True:
         try:
@@ -52,7 +77,8 @@ def get_config_from_user():
         'num_jugadors': num_jugadors,
         'cartes_jugador': cartes_jugador,
         'senyes': senyes,
-        'puntuacio_final': puntuacio_final
+        'puntuacio_final': puntuacio_final,
+        'player_classes': player_classes
     }
 
 def run_demo():
@@ -65,7 +91,7 @@ def run_demo():
     env_config = {
         'allow_step_back': False, 
         'seed': random.randint(0, 100000),
-        'player_class': HumanPlayer,
+        'player_class': user_config['player_classes'], # Diccionari de classes
         'num_jugadors': user_config['num_jugadors'],
         'cartes_jugador': user_config['cartes_jugador'],
         'senyes': user_config['senyes'],
@@ -75,6 +101,8 @@ def run_demo():
 
     print(f"Configuració del Joc:")
     print(f"  - Jugadors: {env.game.num_jugadors}")
+    for pid, p_cls in user_config['player_classes'].items():
+        print(f"    - J{pid}: {p_cls.__name__}")
     print(f"  - Senyes: {'Sí' if env.game.senyes else 'No'}")
     print(f"  - Cartes per jugador: {env.game.cartes_jugador}")
     print(f"  - Puntuació final: {env.game.puntuacio_final}")
@@ -98,37 +126,40 @@ def run_demo():
         player = env.game.players[player_id]
         
         action = player.triar_accio(state['raw_obs'])
+        action_name = ACTION_LIST[action]
 
-        # Executar Pas
-        print(f"Executant: {ACTION_LIST[action]}...")
+        print(f"Jugador {player_id} ({type(player).__name__}) executant: {action_name}...")
         state, next_player_id = env.step(action)
         
-        # Detectar final
-        if isinstance(next_player_id, list):
-             player_id = next_player_id[0]
-        else:
-             player_id = next_player_id
-             
         if env.game.is_over():
             done = True
+            break
+
+        # Detectar següent jugador
+        if isinstance(next_player_id, list):
+            player_id = next_player_id[0]
+        else:
+            player_id = next_player_id
+             
 
     # Final de partida
     print("\n" + "="*40)
     print("JOC ACABAT!")
     winner = 0 if game.score[0] > game.score[1] else 1 
     
-    print(f"Marcador Final Mà: J0: {game.score[0]} - J1: {game.score[1]}")
+    print(f"Marcador Global: E0: {game.score[0]} - E1: {game.score[1]}")
     
-    truc_win = game.judger.guanyador_ma(game.ronda_winners, game.ma)
-    if truc_win != -1:
-        print(f"Guanyador per Cartes: J{truc_win}")
-    else:
-        print("Final per Fold (No vull).")
+    payoffs = env.get_payoffs()
+    print(f"Payoffs (diferència de punts): {payoffs}")
 
 if __name__ == "__main__":
     while True:
-        run_demo()
-        print("\n")
-        retry = input("Vols jugar un altra mà? (s/n): ")
-        if retry.lower() != 's':
-            break
+        try:
+            run_demo()
+            print("\n")
+            retry = input("Vols jugar un altra mà? (s/n): ")
+            if retry.lower() != 's':
+                break
+        except KeyboardInterrupt:
+            print("\nSortint...")
+            sys.exit(0)

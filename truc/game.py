@@ -33,7 +33,16 @@ class TrucGame:
 
     def init_game(self):
         self.payoffs = [0] * self.num_jugadors
-        self.players = [self.player_class(i, self.np_random) for i in range(self.num_jugadors)]
+        
+        self.players = []
+        for i in range(self.num_jugadors):
+            if isinstance(self.player_class, dict):
+                p_class = self.player_class.get(i, TrucPlayer)
+            else:
+                p_class = self.player_class
+                
+            self.players.append(p_class(i, self.np_random))
+
         self.dealer = TrucDealer(self.np_random, n_cartes=self.cartes_jugador)
         self.judger = TrucJudger(self.np_random, n_cartes=self.cartes_jugador)
 
