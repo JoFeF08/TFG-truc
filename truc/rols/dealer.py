@@ -10,6 +10,7 @@ class TrucDealer:
         self.cartes = init_joc_cartes()
 
     def shuffle(self):
+        self.cartes = init_joc_cartes()  # Recrear baralla completa sempre
         self.np_random.shuffle(self.cartes)
 
     def deal_cards(self, player, num=None):

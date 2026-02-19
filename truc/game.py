@@ -270,7 +270,8 @@ class TrucGame:
             
             # Comprovar fi
             winner = self.judger.guanyador_ma(self.ronda_winners, self.ma)
-            if winner != -1:
+            if winner != -1 or self.round_counter >= self.cartes_jugador:
+                if winner == -1: winner = self.ma
                 debug_print(f"=====>DEBUG: Mà acabada. Guanyador: Jugador {winner}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
                 self.score[winner] += self.truc_level
                 debug_print(f"=====>DEBUG: Score després: {self.score}")
@@ -404,9 +405,12 @@ class TrucGame:
     def get_player_id(self):
         return self.current_player
 
-    def is_over(self):
+    def is_ma_over(self):
         winner = self.judger.guanyador_ma(self.ronda_winners, self.ma)
         return winner != -1 or self.round_counter >= self.cartes_jugador
+
+    def is_over(self):
+        return max(self.score) >= self.puntuacio_final
 
     def _reset_hand_state(self):
         # Avançar mà

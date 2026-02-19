@@ -113,9 +113,8 @@ def run_demo():
     done = False
     
    
+    game = env.game
     while not done:
-        game = env.game
-        
         # Mostrar Taula
         if game.hist_cartes:
             print("\nTAULA (Històric):")
@@ -123,7 +122,7 @@ def run_demo():
                 print(f"  J{pid} -> {card}")
         
         # Obtenir jugador actual
-        player = env.game.players[player_id]
+        player = game.players[player_id]
         
         action = player.triar_accio(state['raw_obs'])
         action_name = ACTION_LIST[action]
@@ -131,16 +130,11 @@ def run_demo():
         print(f"Jugador {player_id} ({type(player).__name__}) executant: {action_name}...")
         state, next_player_id = env.step(action)
         
-        if env.game.is_over():
+        if game.is_over():
             done = True
             break
 
-        # Detectar següent jugador
-        if isinstance(next_player_id, list):
-            player_id = next_player_id[0]
-        else:
-            player_id = next_player_id
-             
+        player_id = next_player_id
 
     # Final de partida
     print("\n" + "="*40)
