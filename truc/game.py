@@ -299,28 +299,38 @@ class TrucGame:
         """
         player = self.players[player_id]
         state = {}
-        state['ma_jugador'] = [c for c in player.hand]
-        state['hist_cartes'] = self.hist_cartes 
-        state['accions_legals'] = self.get_legal_actions()
-        
-        state['puntuacio'] = self.score
+
+        # --- CONTEXT GENERAL ---
+        state['id_jugador'] = player_id
         state['ma'] = self.ma
+        state['puntuacio'] = self.score
+
+        # --- ESTAT DEL TORN ---
         state['comptador_ronda'] = self.round_counter
         state['fase_torn'] = self.turn_phase
         state['estat_resposta'] = self.response_state.value
-        state['hist_senyes'] = self.hist_senyes
+
+        # --- APOSTES ---
         state['estat_truc'] = {
             'level': self.truc_level,
             'owner': self.truc_owner,
-            'active': (self.truc_level > 1) 
+            'active': (self.truc_level > 1)
         }
         state['estat_envit'] = {
             'level': self.envit_level,
             'owner': self.envit_owner,
-            'active': (self.envit_level > 0), 
+            'active': (self.envit_level > 0),
             'accepted': self.envit_accepted
         }
-        state['id_jugador'] = player_id
+
+        # --- INFORMACIÓ DEL JUGADOR ---
+        state['ma_jugador'] = [c for c in player.hand]
+        state['accions_legals'] = self.get_legal_actions()
+
+        # --- HISTORIAL ---
+        state['hist_cartes'] = self.hist_cartes
+        state['hist_senyes'] = self.hist_senyes
+
         return state
 
     def get_legal_actions(self):
