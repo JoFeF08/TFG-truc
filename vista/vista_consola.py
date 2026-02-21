@@ -3,7 +3,7 @@ from entorn.cartes_accions import ACTION_LIST
 
 
 class VistaConsola:
-    """Vista per consola; implementa EscollidorAccio i concentra tota la I/O."""
+    """Vista per consola"""
 
     def escollir_accio(self, accions_legals: list, state: dict) -> int:
         """Mostra torn, mà, taula, puntuació; llista accions; demana input; retorna codi d'acció."""
@@ -36,16 +36,15 @@ class VistaConsola:
                 sys.exit(0)
 
     def demanar_config(self) -> dict:
-        """Demana configuració amb print/input. Retorna dict amb tipus_jugadors (0=humà, 1=random)."""
         print("\n=== CONFIGURACIÓ DEL JOC ===\n")
 
         while True:
             try:
                 num_jugadors = input("Número de jugadors (2): ").strip()
                 num_jugadors = int(num_jugadors) if num_jugadors else 2
-                if num_jugadors > 0:
+                if num_jugadors >= 2 and num_jugadors % 2 == 0:
                     break
-                print("Ha de ser un número positiu!")
+                print("Ha de ser un número parell major o igual a 2.")
             except ValueError:
                 print("Si us plau, introdueix un número vàlid.")
 
@@ -76,12 +75,15 @@ class VistaConsola:
             except ValueError:
                 print("Si us plau, introdueix un número vàlid.")
 
-        while True:
-            senyes_input = input("Activar senyes? (s/N): ").strip().lower()
-            if senyes_input in ("s", "n", ""):
-                senyes = senyes_input == "s"
-                break
-            print("Si us plau, respon 's' o 'n'.")
+        if num_jugadors == 2:
+            senyes = False
+        else:
+            while True:
+                senyes_input = input("Activar senyes? (s/N): ").strip().lower()
+                if senyes_input in ("s", "n", ""):
+                    senyes = senyes_input == "s"
+                    break
+                print("Si us plau, respon 's' o 'n'.")
 
         while True:
             try:
@@ -102,7 +104,7 @@ class VistaConsola:
         }
 
     def mostrar_inici(self) -> None:
-        """Missatge d'inici de la demo."""
+    
         print("=== INICIANT DEMO TRUC (TERMINAL) ===")
 
     def mostrar_configuracio(
@@ -113,7 +115,7 @@ class VistaConsola:
         cartes_jugador: int,
         puntuacio_final: int,
     ) -> None:
-        """Mostra la configuració del joc (jugadors, senyes, cartes, puntuació final)."""
+        """Mostra jugadors, senyes, cartes, puntuació final"""
         noms_tipus = {0: "Humà", 1: "Random"}
         print("Configuració del Joc:")
         print(f"  - Jugadors: {num_jugadors}")
@@ -125,7 +127,6 @@ class VistaConsola:
         print(f"  - Puntuació final: {puntuacio_final}")
 
     def mostrar_barrejant(self) -> None:
-        """Mostra que s'estan barrejant les cartes."""
         print("Barrejant cartes...")
 
     def mostrar_taula(self, hist_cartes: list) -> None:
@@ -138,24 +139,21 @@ class VistaConsola:
     def mostrar_accio_executada(
         self, player_id: int, nom_jugador: str, action_name: str
     ) -> None:
-        """Anuncia l'acció executada per un jugador."""
         print(f"Jugador {player_id} ({nom_jugador}) executant: {action_name}...")
 
     def mostrar_fi_partida(self, score: list, payoffs: list) -> None:
-        """Mostra el resultat final de la partida."""
         print("\n" + "=" * 40)
         print("JOC ACABAT!")
         print(f"Marcador Global: E0: {score[0]} - E1: {score[1]}")
         print(f"Payoffs (diferència de punts): {payoffs}")
 
     def demanar_repetir(self) -> bool:
-        """Pregunta si es vol jugar una altra mà. Retorna True si sí, False si no."""
+        """Pregunta si es vol jugar una altra partida"""
         try:
-            retry = input("Vols jugar una altra mà? (s/n): ").strip().lower()
+            retry = input("Vols jugar una altra partida? (s/n): ").strip().lower()
             return retry == "s"
         except (EOFError, KeyboardInterrupt):
             return False
 
     def mostrar_sortint(self) -> None:
-        """Missatge de sortida."""
         print("\nSortint...")

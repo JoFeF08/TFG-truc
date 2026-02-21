@@ -1,10 +1,7 @@
 import random
 import sys
 
-from entorn import TrucEnv
-from entorn.cartes_accions import ACTION_LIST
-from entorn.rols.player.player_huma import HumanPlayer
-from entorn.rols.player.player_random import RandomPlayer
+from entorn import ACTION_LIST, HumanPlayer, RandomPlayer, TrucEnv
 from vista import VistaConsola
 
 
@@ -12,7 +9,7 @@ def run_demo(vista: VistaConsola) -> None:
     """Executa una partida; tota la I/O es fa a través de la vista."""
     config = vista.demanar_config()
 
-    # Construir player_classes: callables per a humans (injecten vista), classe per a random
+    # Construir player_classes
     player_classes = {}
     for i in range(config["num_jugadors"]):
         if config["tipus_jugadors"].get(i, 0) == 0:
@@ -46,13 +43,15 @@ def run_demo(vista: VistaConsola) -> None:
     done = False
 
     while not done:
+
         vista.mostrar_taula(game.hist_cartes)
+        
         player = game.players[player_id]
         action = player.triar_accio(state["raw_obs"])
         action_name = ACTION_LIST[action]
         vista.mostrar_accio_executada(player_id, type(player).__name__, action_name)
+        
         state, next_player_id = env.step(action)
-
         if game.is_over():
             done = True
             break
