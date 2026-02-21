@@ -1,11 +1,12 @@
+import argparse
 import random
 import sys
 
 from entorn import ACTION_LIST, HumanPlayer, RandomPlayer, TrucEnv
-from vista import VistaConsola
+from vista import VistaConsola, VistaDesktop
 
 
-def run_demo(vista: VistaConsola) -> None:
+def run_demo(vista) -> None:
     """Executa una partida; tota la I/O es fa a través de la vista."""
     config = vista.demanar_config()
 
@@ -61,7 +62,18 @@ def run_demo(vista: VistaConsola) -> None:
 
 
 if __name__ == "__main__":
-    vista = VistaConsola()
+    parser = argparse.ArgumentParser(description="Demo del joc Truc")
+    parser.add_argument(
+        "--vista",
+        choices=["consola", "desktop"],
+        default="consola",
+        help="Vista a usar: consola (terminal) o desktop (Tkinter)",
+    )
+    args = parser.parse_args()
+    if args.vista == "desktop":
+        vista = VistaDesktop()
+    else:
+        vista = VistaConsola()
     while True:
         try:
             run_demo(vista)
