@@ -62,5 +62,6 @@ venv.bak/
 # Project specific
 doc/temp
 
-# Python unified pycache
+# Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
+.tmp/
