@@ -42,9 +42,9 @@ class VistaConsola:
             try:
                 num_jugadors = input("Número de jugadors (2): ").strip()
                 num_jugadors = int(num_jugadors) if num_jugadors else 2
-                if num_jugadors >= 2 and num_jugadors % 2 == 0:
+                if num_jugadors in (2, 4):
                     break
-                print("Ha de ser un número parell major o igual a 2.")
+                print("Només es permet 2 jugadors (1v1) o 4 jugadors (2v2).")
             except ValueError:
                 print("Si us plau, introdueix un número vàlid.")
 
@@ -129,12 +129,16 @@ class VistaConsola:
     def mostrar_barrejant(self) -> None:
         print("Barrejant cartes...")
 
-    def mostrar_taula(self, hist_cartes: list) -> None:
+    def mostrar_taula(self, hist_cartes: list, state: dict | None = None) -> None:
         """Mostra les cartes jugades a la taula."""
         if hist_cartes:
             print("\nTAULA (Històric):")
             for pid, card in hist_cartes:
                 print(f"  J{pid} -> {card}")
+
+    def actualitzar_taula(self, state: dict) -> None:
+        """Actualitza la taula (consola: no cal fer res)."""
+        pass
 
     def mostrar_accio_executada(
         self, player_id: int, nom_jugador: str, action_name: str
