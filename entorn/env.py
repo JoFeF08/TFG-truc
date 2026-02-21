@@ -133,6 +133,12 @@ class TrucEnv(Env):
     def get_payoffs(self):
         return self.game.get_payoffs()
 
+    def get_estat_taula(self, player_id):
+        """
+        Retorna l'estat brut del joc per mostrar la taula
+        """
+        return self.game.get_state(player_id)
+
     def _decode_action(self, action_id):
         return ACTION_LIST[action_id]
 
