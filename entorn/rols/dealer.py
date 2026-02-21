@@ -1,4 +1,4 @@
-from truc.cartes_accions import init_joc_cartes
+from entorn.cartes_accions import init_joc_cartes
 
 class TrucDealer:
     """

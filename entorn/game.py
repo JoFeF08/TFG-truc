@@ -1,8 +1,8 @@
 import numpy as np
-from truc.rols.player.player import TrucPlayer
-from truc.rols.dealer import TrucDealer
-from truc.rols.judger import TrucJudger
-from truc.cartes_accions import ACTION_SPACE, ACTION_LIST
+from entorn.rols.player.player import TrucPlayer
+from entorn.rols.dealer import TrucDealer
+from entorn.rols.judger import TrucJudger
+from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST
 from enum import Enum
 
 

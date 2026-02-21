@@ -1,159 +1,73 @@
 import random
 import sys
-from truc.env import TrucEnv
-from truc.cartes_accions import ACTION_LIST
-from truc.rols.player.player_huma import HumanPlayer
-from truc.rols.player.player_random import RandomPlayer
 
-def get_config_from_user():
-    """Demana a l'usuari la configuració del joc"""
-    print("\n=== CONFIGURACIÓ DEL JOC ===\n")
-    
-    # Número de jugadors
-    while True:
-        try:
-            num_jugadors = input("Número de jugadors (2): ").strip()
-            num_jugadors = int(num_jugadors) if num_jugadors else 2
-            if num_jugadors > 0:
-                break
-            print("Ha de ser un número positiu!")
-        except ValueError:
-            print("Si us plau, introdueix un número vàlid.")
-    
-    # Tipus de jugadors
+from entorn import TrucEnv
+from entorn.cartes_accions import ACTION_LIST
+from entorn.rols.player.player_huma import HumanPlayer
+from entorn.rols.player.player_random import RandomPlayer
+from vista import VistaConsola
+
+
+def run_demo(vista: VistaConsola) -> None:
+    """Executa una partida; tota la I/O es fa a través de la vista."""
+    config = vista.demanar_config()
+
+    # Construir player_classes: callables per a humans (injecten vista), classe per a random
     player_classes = {}
-    print("\nTipus de jugadors disponibles:")
-    print("  0: Humà")
-    print("  1: Aleatori (Random)")
-    
-    for i in range(num_jugadors):
-        while True:
-            try:
-                p_type = input(f"Tipus per al Jugador {i} (0=Humà, 1=Random): ").strip()
-                p_type = int(p_type) if p_type else 0
-                
-                if p_type == 0:
-                    player_classes[i] = HumanPlayer
-                    break
-                elif p_type == 1:
-                    player_classes[i] = RandomPlayer
-                    break
-                else:
-                    print("Opció no vàlida (0 o 1).")
-            except ValueError:
-                print("Introdueix un número (0 o 1).")
+    for i in range(config["num_jugadors"]):
+        if config["tipus_jugadors"].get(i, 0) == 0:
+            player_classes[i] = lambda pid, rng, _v=vista: HumanPlayer(pid, rng, _v)
+        else:
+            player_classes[i] = RandomPlayer
 
-    # Número de cartes per jugador
-    while True:
-        try:
-            cartes_jugador = input("Cartes per jugador (3): ").strip()
-            cartes_jugador = int(cartes_jugador) if cartes_jugador else 3
-            if cartes_jugador > 0:
-                break
-            print("Ha de ser un número positiu!")
-        except ValueError:
-            print("Si us plau, introdueix un número vàlid.")
-    
-    # Senyes
-    while True:
-        senyes_input = input("Activar senyes? (s/N): ").strip().lower()
-        if senyes_input in ['s', 'n', '']:
-            senyes = (senyes_input == 's')
-            break
-        print("Si us plau, respon 's' o 'n'.")
-    
-    # Puntuació final
-    while True:
-        try:
-            puntuacio_final = input("Puntuació final per guanyar (24): ").strip()
-            puntuacio_final = int(puntuacio_final) if puntuacio_final else 24
-            if puntuacio_final > 0:
-                break
-            print("Ha de ser un número positiu!")
-        except ValueError:
-            print("Si us plau, introdueix un número vàlid.")
-    
-    return {
-        'num_jugadors': num_jugadors,
-        'cartes_jugador': cartes_jugador,
-        'senyes': senyes,
-        'puntuacio_final': puntuacio_final,
-        'player_classes': player_classes
-    }
-
-def run_demo():
-    print("=== INICIANT DEMO TRUC (TERMINAL) ===")
-    
-    # Obtenir configuració personalitzada
-    user_config = get_config_from_user()
-    
-    # Configurar entorn amb els paràmetres de l'usuari
     env_config = {
-        'allow_step_back': False, 
-        'seed': random.randint(0, 100000),
-        'player_class': user_config['player_classes'], # Diccionari de classes
-        'num_jugadors': user_config['num_jugadors'],
-        'cartes_jugador': user_config['cartes_jugador'],
-        'senyes': user_config['senyes'],
-        'puntuacio_final': user_config['puntuacio_final']
+        "allow_step_back": False,
+        "seed": random.randint(0, 100000),
+        "player_class": player_classes,
+        "num_jugadors": config["num_jugadors"],
+        "cartes_jugador": config["cartes_jugador"],
+        "senyes": config["senyes"],
+        "puntuacio_final": config["puntuacio_final"],
     }
     env = TrucEnv(env_config)
+    game = env.game
 
-    print(f"Configuració del Joc:")
-    print(f"  - Jugadors: {env.game.num_jugadors}")
-    for pid, p_cls in user_config['player_classes'].items():
-        print(f"    - J{pid}: {p_cls.__name__}")
-    print(f"  - Senyes: {'Sí' if env.game.senyes else 'No'}")
-    print(f"  - Cartes per jugador: {env.game.cartes_jugador}")
-    print(f"  - Puntuació final: {env.game.puntuacio_final}")
+    vista.mostrar_inici()
+    vista.mostrar_configuracio(
+        num_jugadors=config["num_jugadors"],
+        tipus_jugadors=config["tipus_jugadors"],
+        senyes=config["senyes"],
+        cartes_jugador=config["cartes_jugador"],
+        puntuacio_final=config["puntuacio_final"],
+    )
+    vista.mostrar_barrejant()
 
-    # Reiniciar joc
-    print("Barrejant cartes...")
     state, player_id = env.reset()
     done = False
-    
-   
-    game = env.game
-    while not done:
-        # Mostrar Taula
-        if game.hist_cartes:
-            print("\nTAULA (Històric):")
-            for pid, card in game.hist_cartes:
-                print(f"  J{pid} -> {card}")
-        
-        # Obtenir jugador actual
-        player = game.players[player_id]
-        
-        action = player.triar_accio(state['raw_obs'])
-        action_name = ACTION_LIST[action]
 
-        print(f"Jugador {player_id} ({type(player).__name__}) executant: {action_name}...")
+    while not done:
+        vista.mostrar_taula(game.hist_cartes)
+        player = game.players[player_id]
+        action = player.triar_accio(state["raw_obs"])
+        action_name = ACTION_LIST[action]
+        vista.mostrar_accio_executada(player_id, type(player).__name__, action_name)
         state, next_player_id = env.step(action)
-        
+
         if game.is_over():
             done = True
             break
-
         player_id = next_player_id
 
-    # Final de partida
-    print("\n" + "="*40)
-    print("JOC ACABAT!")
-    winner = 0 if game.score[0] > game.score[1] else 1 
-    
-    print(f"Marcador Global: E0: {game.score[0]} - E1: {game.score[1]}")
-    
-    payoffs = env.get_payoffs()
-    print(f"Payoffs (diferència de punts): {payoffs}")
+    vista.mostrar_fi_partida(game.score, env.get_payoffs())
+
 
 if __name__ == "__main__":
+    vista = VistaConsola()
     while True:
         try:
-            run_demo()
-            print("\n")
-            retry = input("Vols jugar un altra mà? (s/n): ")
-            if retry.lower() != 's':
+            run_demo(vista)
+            if not vista.demanar_repetir():
                 break
         except KeyboardInterrupt:
-            print("\nSortint...")
+            vista.mostrar_sortint()
             sys.exit(0)

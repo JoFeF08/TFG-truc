@@ -1,4 +1,4 @@
-from truc.rols.player.player import TrucPlayer
+from entorn.rols.player.player import TrucPlayer
 
 
 class RandomPlayer(TrucPlayer):
