@@ -1,6 +1,15 @@
+import os
+import sys
+
+# Concentrar tot el bytecode (__pycache__) dins la carpeta temp/ del projecte
+_root = os.path.dirname(os.path.abspath(__file__))
+_pycache_dir = os.path.join(_root, "temp", "pycache")
+os.environ["PYTHONPYCACHEPREFIX"] = _pycache_dir
+os.makedirs(_pycache_dir, exist_ok=True)
+
 import argparse
 import random
-import sys
+import time
 
 from entorn import ACTION_LIST, HumanPlayer, RandomPlayer, TrucEnv
 from vista import VistaConsola, VistaDesktop
@@ -40,19 +49,31 @@ def run_demo(vista) -> None:
     )
     vista.mostrar_barrejant()
 
+    id_jugador_huma = next(
+        (i for i in range(config["num_jugadors"]) if config["tipus_jugadors"].get(i, 0) == 0),
+        None,
+    )
+
     state, player_id = env.reset()
     done = False
 
     while not done:
+        # Actualitzar taula al començament de cada torn (la que mostra les cartes és mostrar_taula)
+        estat_inicial = env.get_estat_taula(id_jugador_huma) if id_jugador_huma is not None else None
+        vista.mostrar_taula(game.hist_cartes, estat_inicial)
 
-        vista.mostrar_taula(game.hist_cartes)
-        
         player = game.players[player_id]
         action = player.triar_accio(state["raw_obs"])
         action_name = ACTION_LIST[action]
         vista.mostrar_accio_executada(player_id, type(player).__name__, action_name)
-        
+        if isinstance(player, RandomPlayer):
+            time.sleep(player._time_ms / 1000.0)
+
         state, next_player_id = env.step(action)
+        if id_jugador_huma is not None:
+            state_taula = env.get_estat_taula(id_jugador_huma)
+            vista.actualitzar_taula(state_taula)
+            time.sleep(0.5)
         if game.is_over():
             done = True
             break
