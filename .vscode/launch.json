@@ -8,7 +8,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "env": {
-        "PYTHONPYCACHEPREFIX": "${workspaceFolder}/temp/pycache"
+        "PYTHONDONTWRITEBYTECODE": "1"
       }
     }
   ]

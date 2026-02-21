@@ -3,5 +3,8 @@
         "envits",
         "estat",
         "Truc"
-    ]
+    ],
+    "terminal.integrated.env.windows": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+    }
 }
