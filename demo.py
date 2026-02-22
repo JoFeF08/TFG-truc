@@ -15,9 +15,9 @@ from entorn import ACTION_LIST, HumanPlayer, RandomPlayer, TrucEnv
 from vista import VistaConsola, VistaDesktop
 
 
-def run_demo(vista) -> None:
-    """Executa una partida; tota la I/O es fa a través de la vista."""
-    config = vista.demanar_config()
+def run_demo(vista, config=None) -> None:
+    if config is None:
+        config = vista.demanar_config()
 
     # Construir player_classes
     player_classes = {}
@@ -58,7 +58,6 @@ def run_demo(vista) -> None:
     done = False
 
     while not done:
-        # Actualitzar taula al començament de cada torn (la que mostra les cartes és mostrar_taula)
         estat_inicial = env.get_estat_taula(id_jugador_huma) if id_jugador_huma is not None else None
         vista.mostrar_taula(game.hist_cartes, estat_inicial)
 
