@@ -209,7 +209,7 @@ class TrucGame:
             self.response_state = ResponseState.ENVIT_PENDING
             
             # donar torn per respondre
-            self.current_player = (self.current_player + 1) % 2
+            self.current_player = (self.current_player + 1) % self.num_jugadors
             return self._get_return_state()
 
         elif action_str == 'apostar_truc':
@@ -225,7 +225,7 @@ class TrucGame:
             self.truc_level = next_val
             self.truc_owner = self.current_player
             self.response_state = ResponseState.TRUC_PENDING
-            self.current_player = (self.current_player + 1) % 2
+            self.current_player = (self.current_player + 1) % self.num_jugadors
             return self._get_return_state()
         
         elif action_str == 'fora_truc':
@@ -251,36 +251,35 @@ class TrucGame:
             if len(self.cartes_ronda) == self.num_jugadors:
                 winner = self.judger.guanyador_ronda(self.cartes_ronda)
                 if winner is not None:
-                    self.turn_player = winner 
+                    self.turn_player = winner
                     self.ronda_winners.append(winner)
                     debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. Guanyador: Jugador {winner}")
                 else:
                     # Empat
                     self.turn_player = self.ma
-                    self.ronda_winners.append(-1) # -1 indica empat
+                    self.ronda_winners.append(-1)  # -1 indica empat
                     debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. EMPAT")
-                
+
                 self.cartes_ronda = []
                 self.round_counter += 1
+
+                # Comprovar fi de mà just després de tancar una ronda (majoria o 3 rondes)
+                winner_ma = self.judger.guanyador_ma(self.ronda_winners, self.ma)
+                if winner_ma != -1:
+                    debug_print(f"=====>DEBUG: Mà acabada. Guanyador equip: {winner_ma}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
+                    self.score[winner_ma] += self.truc_level
+                    debug_print(f"=====>DEBUG: Score després: {self.score}")
+
+                    if self.score[winner_ma] >= self.puntuacio_final:
+                        return self.get_state(self.current_player), self.get_payoffs()
+
+                    self._reset_hand_state()
+                    return self.get_state(self.current_player), self.current_player
             else:
-                self.turn_player = (self.turn_player + 1) % 2
-                
+                self.turn_player = (self.turn_player + 1) % self.num_jugadors
+
             self.current_player = self.turn_player
             self.turn_phase = 0 if self.senyes else 1
-            
-            # Comprovar fi
-            winner = self.judger.guanyador_ma(self.ronda_winners, self.ma)
-            if winner != -1 or self.round_counter >= self.cartes_jugador:
-                if winner == -1: winner = self.ma
-                debug_print(f"=====>DEBUG: Mà acabada. Guanyador: Jugador {winner}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
-                self.score[winner] += self.truc_level
-                debug_print(f"=====>DEBUG: Score després: {self.score}")
-                
-                if self.score[winner] >= self.puntuacio_final:
-                     return self.get_state(self.current_player), self.get_payoffs()
-                
-                self._reset_hand_state()
-                return self.get_state(self.current_player), self.current_player
 
         return self._get_return_state()
 
@@ -416,8 +415,7 @@ class TrucGame:
         return self.current_player
 
     def is_ma_over(self):
-        winner = self.judger.guanyador_ma(self.ronda_winners, self.ma)
-        return winner != -1 or self.round_counter >= self.cartes_jugador
+        return self.judger.guanyador_ma(self.ronda_winners, self.ma) != -1
 
     def is_over(self):
         return max(self.score) >= self.puntuacio_final
