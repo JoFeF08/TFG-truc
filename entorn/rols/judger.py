@@ -207,8 +207,11 @@ class TrucJudger:
         Determina el guanyador de la mà.
         
         Args:
-            guanyadors_rondes: Llista de guanyadors de cada ronda jugada.
+            guanyadors_rondes: Llista de guanyadors de cada ronda jugada (-1 = empat).
             ma: ID del jugador que és mà (per desempats).
+            
+        Returns:
+            int: 0 o 1 = equip guanyador; -1 = mà encara no acabada.
         """
         rw = guanyadors_rondes
         n_jugades = len(rw)
