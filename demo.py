@@ -7,12 +7,11 @@ _pycache_dir = os.path.join(_root, "temp", "pycache")
 os.environ["PYTHONPYCACHEPREFIX"] = _pycache_dir
 os.makedirs(_pycache_dir, exist_ok=True)
 
-import argparse
 import random
 import time
 
 from entorn import ACTION_LIST, HumanPlayer, RandomPlayer, TrucEnv
-from vista import VistaConsola, VistaDesktop
+from vista import VistaConsola
 
 
 def run_demo(vista, config=None) -> None:
@@ -82,18 +81,7 @@ def run_demo(vista, config=None) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Demo del joc Truc")
-    parser.add_argument(
-        "--vista",
-        choices=["consola", "desktop"],
-        default="consola",
-        help="Vista a usar: consola (terminal) o desktop (Tkinter)",
-    )
-    args = parser.parse_args()
-    if args.vista == "desktop":
-        vista = VistaDesktop()
-    else:
-        vista = VistaConsola()
+    vista = VistaConsola()
     while True:
         try:
             run_demo(vista)
