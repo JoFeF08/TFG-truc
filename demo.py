@@ -1,9 +1,9 @@
 from controlador import Controlador, ModelInteractiu
-from vista import VistaDesktop
+from vista import VistaConsola
 
 
 if __name__ == "__main__":
-    vista = VistaDesktop()
+    vista = VistaConsola()
     model = ModelInteractiu()
     controlador = Controlador(vista, model)
     try:
