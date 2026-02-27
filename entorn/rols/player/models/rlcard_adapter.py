@@ -8,7 +8,7 @@ class RLCardModelAdapter:
     """
 
     def __init__(self, agent, state_extractor: Callable[[dict], dict]):
-        self.agent = agenºt
+        self.agent = agent
         self._extract = state_extractor
 
     def triar_accio(self, estat: dict) -> int:
