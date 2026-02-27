@@ -3,6 +3,7 @@ from __future__ import annotations
 from entorn.game import TrucGame
 from entorn.cartes_accions import ACTION_LIST
 from entorn.rols.player.player import TrucPlayer
+from entorn.rols.player.player_default import DefaultPlayer
 
 
 class _SlotHuma(TrucPlayer):
@@ -10,16 +11,6 @@ class _SlotHuma(TrucPlayer):
 
     def triar_accio(self, estat):
         raise RuntimeError("L'acció humana ha d'arribar del controlador, no del model")
-
-
-class _BotAleatori(TrucPlayer):
-    """Bot aleatori sense delay"""
-
-    def triar_accio(self, estat):
-        accions = estat["accions_legals"]
-        if len(accions) == 1:
-            return int(accions[0])
-        return int(self.np_random.choice(accions))
 
 
 class ModelInteractiu:
@@ -40,7 +31,7 @@ class ModelInteractiu:
             if i in self._humans:
                 player_classes[i] = _SlotHuma
             else:
-                player_classes[i] = _BotAleatori
+                player_classes[i] = DefaultPlayer
 
         self._game = TrucGame(
             num_jugadors=self._num_jugadors,
