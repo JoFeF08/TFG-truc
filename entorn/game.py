@@ -116,7 +116,7 @@ class TrucGame:
                     debug_print(f"=====>DEBUG: Score després: {self.score}")
                     
                     if self.score[winner_team] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.get_payoffs()
+                        return self.get_state(self.current_player), self.current_player
                     
                     # Retornar el torn
                     self.current_player = self.turn_player
@@ -128,7 +128,7 @@ class TrucGame:
                     self.score[winner_team] += points_won
                     
                     if self.score[winner_team] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.get_payoffs()
+                        return self.get_state(self.current_player), self.current_player
 
                     self.envit_accepted = False 
                     self.envit_owner = -1 
@@ -158,7 +158,7 @@ class TrucGame:
                     debug_print(f"=====>DEBUG: Score després: {self.score}")
                     
                     if self.score[winner_team] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.get_payoffs()
+                        return self.get_state(self.current_player), self.current_player
                     
                     self._reset_hand_state()
                     return self._get_return_state()
@@ -234,7 +234,7 @@ class TrucGame:
              self.score[winner] += self.truc_level
              
              if self.score[winner] >= self.puntuacio_final:
-                 return self.get_state(self.current_player), self.get_payoffs()
+                 return self.get_state(self.current_player), None
             
              self._reset_hand_state()
              return self._get_return_state()
@@ -271,7 +271,7 @@ class TrucGame:
                     debug_print(f"=====>DEBUG: Score després: {self.score}")
 
                     if self.score[winner_ma] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.get_payoffs()
+                        return self.get_state(self.current_player), self.current_player
 
                     self._reset_hand_state()
                     return self.get_state(self.current_player), self.current_player
@@ -393,14 +393,6 @@ class TrucGame:
                 actions.append(ACTION_SPACE[f'play_card_{i}'])
             return actions
 
-    def get_payoffs(self):
-        """
-        Calcula la recompensa final (diferència de punts).
-        """
-        p0_points = self.score[0]
-        p1_points = self.score[1]
-        
-        return [p0_points - p1_points, p1_points - p0_points]
 
     def get_num_jugadors(self):
         return self.num_jugadors

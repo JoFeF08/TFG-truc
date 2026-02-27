@@ -130,8 +130,21 @@ class TrucEnv(Env):
         }
         return extracted_state
 
+    # Factor de les micro-recompenses intermèdies.
+    MICRO_FACTOR = 0.3
+
     def get_payoffs(self):
-        return self.game.get_payoffs()
+        score    = self.game.score
+        objectiu = self.game.puntuacio_final
+        payoffs  = []
+
+        for pid in range(self.num_jugadors):
+            ha_guanyat   = score[pid] >= objectiu
+            reward_final = 1.0 if ha_guanyat else -1.0
+            reward_inter = (score[pid] / objectiu) * self.MICRO_FACTOR
+            payoffs.append(reward_final + reward_inter)
+
+        return payoffs
 
     def get_estat_taula(self, player_id):
         """
