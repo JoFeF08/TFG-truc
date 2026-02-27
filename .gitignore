@@ -61,6 +61,7 @@ venv.bak/
 
 # Project specific
 doc/temp
+dades_partides/
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/

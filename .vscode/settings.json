@@ -1,7 +1,11 @@
 {
-    "cSpell.words": [
+  "cSpell.words": [
         "envits",
         "estat",
         "Truc"
-    ]
+    ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  }
 }
