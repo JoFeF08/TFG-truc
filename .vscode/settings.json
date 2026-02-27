@@ -1,11 +1,14 @@
 {
   "cSpell.words": [
-        "envits",
-        "estat",
-        "Truc"
-    ],
+    "envits",
+    "estat",
+    "Truc"
+  ],
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true
-  }
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true
 }
