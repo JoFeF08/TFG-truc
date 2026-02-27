@@ -76,6 +76,7 @@ class TrucGame:
         
         self.envit_accepted = False 
         self.previous_envit_level = 1 
+        self.envit_is_falta = False
         
 
         self.round_counter = 0
@@ -196,6 +197,7 @@ class TrucGame:
                  next_level = 6 # Dos més
             elif self.envit_level >= 6:
                  # Tots (Falta Envit)
+                 self.envit_is_falta = True
                  # Regla: Si cap parella > 12 -> Guanya Partida.
                  # Si alguna > 12 -> Punts que falten al que va guanyant per arribar a 24.
                  leader_score = max(self.score)
@@ -343,7 +345,7 @@ class TrucGame:
                 actions.append(ACTION_SPACE['vull_envit'])
                 actions.append(ACTION_SPACE['fora_envit'])
                 
-                if self.envit_level <= 6:
+                if self.envit_level <= 6 and not self.envit_is_falta:
                     actions.append(ACTION_SPACE['apostar_envit']) # Re-apostar (Torna-hi)
                 
                 return actions
@@ -433,6 +435,7 @@ class TrucGame:
         self.envit_owner = -1
         self.envit_accepted = False
         self.previous_envit_level = 1
+        self.envit_is_falta = False
         
         self.round_counter = 0
         self.cartes_ronda = []
