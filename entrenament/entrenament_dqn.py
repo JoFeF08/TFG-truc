@@ -3,20 +3,23 @@ import csv
 from pathlib import Path
 import torch
 import logging
-
-# ─── Configuració ─────────────────────────────────────────────────────────────
-VERBOSE_TRAINING = False
-
-# Silenciar els bombardeigs "INFO - Step X, rl-loss: Y" de RLCard
-if not VERBOSE_TRAINING:
-    logging.getLogger("rlcard").setLevel(logging.ERROR)
-    logging.getLogger("torch").setLevel(logging.ERROR)
-else:
-    logging.getLogger("rlcard").setLevel(logging.INFO)
+from contextlib import redirect_stdout  # <-- Per al forat negre
+from tqdm import tqdm                   # <-- Per a la barra de progrés
 
 from rlcard.agents import DQNAgent, RandomAgent
 from rlcard.utils import set_seed, reorganize
 from entorn import TrucEnv
+
+# ─── Configuració ─────────────────────────────────────────────────────────────
+VERBOSE_TRAINING = False
+
+# Silenciar els loggers
+if not VERBOSE_TRAINING:
+    logging.basicConfig(level=logging.ERROR, force=True)
+    logging.getLogger().setLevel(logging.ERROR) 
+else:
+    logging.basicConfig(level=logging.INFO, force=True)
+    logging.getLogger().setLevel(logging.INFO)
 
 # ─── Configuració ─────────────────────────────────────────────────────────────
 SEED            = 42
@@ -30,7 +33,7 @@ LAYERS          = [256, 256]
 LEARNING_RATE   = 5e-4
 BATCH_SIZE      = 256
 MEMORY_SIZE     = 20_000
-UPDATE_TARGET   = 300        # Cada quants passos actualitzem la xarxa target
+UPDATE_TARGET   = 500        
 EPSILON_MIN     = 0.05
 
 # Carpetes de sortida
@@ -88,24 +91,30 @@ def main():
         csv.writer(f).writerow(["episodi", "reward_mig", "victoires"])
 
     print(f"Iniciant entrenament DQN ({NUM_EPISODES} episodis)...")
+    
+    devnull = open(os.devnull, 'w')
 
-    for episodi in range(1, NUM_EPISODES + 1):
+    # Bucle principal amb barra de progrés
+    for episodi in tqdm(range(1, NUM_EPISODES + 1), desc="Entrenant DQN", unit="ep"):
         # Un episodi = una partida completa de Truc
         trajectories, payoffs = env.run(is_training=True)
-        # Reorganitzar a 5-tuples (state, action, reward, next_state, done)
         trajectories = reorganize(trajectories, payoffs)
 
         # Alimentar les transicions a l'agent
-        for ts in trajectories[0]:
-            dqn_agent.feed(ts)
+        if not VERBOSE_TRAINING:
+            with redirect_stdout(devnull):
+                for ts in trajectories[0]:
+                    dqn_agent.feed(ts)
+        else:
+            for ts in trajectories[0]:
+                dqn_agent.feed(ts)
 
         # Avaluació periòdica
         if episodi % EVALUATE_EVERY == 0:
             reward_mig = avaluar(eval_env, EVALUATE_NUM)
-            # reward > 1.0 vol dir victòria (recompensa mínima de guanyar = 1.0)
             pct_victoria = round(100 * (reward_mig - (-1.3)) / (1.3 - (-1.3)), 1)
 
-            print(f"[Episodi {episodi:>6}]  reward mig: {reward_mig:.4f}  vic%: {pct_victoria:.1f}%")
+            tqdm.write(f"[Episodi {episodi:>6}]  reward mig: {reward_mig:.4f}  vic%: {pct_victoria:.1f}%")
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow([episodi, reward_mig, pct_victoria])
@@ -114,13 +123,15 @@ def main():
         if episodi % SAVE_EVERY == 0:
             path = os.path.join(MODEL_DIR, f"dqn_truc_ep{episodi}.pt")
             torch.save(dqn_agent.q_estimator.qnet.state_dict(), path)
-            print(f"  → Model desat a {path}")
+            tqdm.write(f"  → Model desat a {path}")
 
     # Desar model final
     final_path = os.path.join(MODEL_DIR, "dqn_truc.pt")
     torch.save(dqn_agent.q_estimator.qnet.state_dict(), final_path)
     print(f"\nEntrenament finalitzat. Model final: {final_path}")
     print(f"Logs: {log_path}")
+    
+    devnull.close()
 
 
 if __name__ == "__main__":

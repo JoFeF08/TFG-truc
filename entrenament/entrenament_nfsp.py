@@ -3,20 +3,23 @@ import csv
 from pathlib import Path
 import torch
 import logging
-
-# ─── Configuració ─────────────────────────────────────────────────────────────
-VERBOSE_TRAINING = False
-
-# Silenciar els bombardeigs "INFO - Step X, rl-loss: Y" de RLCard
-if not VERBOSE_TRAINING:
-    logging.getLogger("rlcard").setLevel(logging.ERROR)
-    logging.getLogger("torch").setLevel(logging.ERROR)
-else:
-    logging.getLogger("rlcard").setLevel(logging.INFO)
+from contextlib import redirect_stdout
+from tqdm import tqdm
 
 from rlcard.agents import NFSPAgent, RandomAgent
 from rlcard.utils import set_seed, reorganize
 from entorn import TrucEnv
+
+# ─── Configuració ─────────────────────────────────────────────────────────────
+VERBOSE_TRAINING = False
+
+# Silenciar els loggers
+if not VERBOSE_TRAINING:
+    logging.basicConfig(level=logging.ERROR, force=True)
+    logging.getLogger().setLevel(logging.ERROR) 
+else:
+    logging.basicConfig(level=logging.INFO, force=True)
+    logging.getLogger().setLevel(logging.INFO)
 
 # ─── Configuració ─────────────────────────────────────────────────────────────
 SEED            = 42
@@ -99,17 +102,23 @@ def main():
         csv.writer(f).writerow(["episodi", "reward_mig_p0", "vic_pct_p0", "mode_p0", "mode_p1"])
 
     print(f"Iniciant entrenament NFSP ({NUM_EPISODES} episodis, self-play)...")
+    devnull = open(os.devnull, 'w') 
 
-    for episodi in range(1, NUM_EPISODES + 1):
+    for episodi in tqdm(range(1, NUM_EPISODES + 1), desc="Entrenant NFSP", unit="ep"):
         # Un episodi = una partida completa de Truc
         trajectories, payoffs = env.run(is_training=True)
-        # Reorganitzar a 5-tuples (state, action, reward, next_state, done)
         trajectories = reorganize(trajectories, payoffs)
 
         # Alimentar les transicions a cada agent
-        for i, agent in enumerate([agent_0, agent_1]):
-            for ts in trajectories[i]:
-                agent.feed(ts)
+        if not VERBOSE_TRAINING:
+            with redirect_stdout(devnull):
+                for i, agent in enumerate([agent_0, agent_1]):
+                    for ts in trajectories[i]:
+                        agent.feed(ts)
+        else:
+            for i, agent in enumerate([agent_0, agent_1]):
+                for ts in trajectories[i]:
+                    agent.feed(ts)
 
         # Avaluació periòdica
         if episodi % EVALUATE_EVERY == 0:
@@ -122,8 +131,8 @@ def main():
             reward_mig  = avaluar(eval_env, EVALUATE_NUM)
             pct_victoria = round(100 * (reward_mig - (-1.3)) / (1.3 - (-1.3)), 1)
 
-            print(f"[Episodi {episodi:>6}]  reward mig p0: {reward_mig:.4f}  vic_pct: {pct_victoria:.1f}%  "
-                  f"(mode p0={mode_p0}, p1={mode_p1})")
+            tqdm.write(f"[Episodi {episodi:>6}]  reward mig p0: {reward_mig:.4f}  vic_pct: {pct_victoria:.1f}%  "
+                       f"(mode p0={mode_p0}, p1={mode_p1})")
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow([episodi, reward_mig, pct_victoria, mode_p0, mode_p1])
@@ -136,7 +145,7 @@ def main():
                     'q_net':  agent._rl_agent.q_estimator.qnet.state_dict(),
                     'sl_net': agent.policy_network.state_dict(),
                 }, path)
-            print(f"  → Models desats (episodi {episodi})")
+            tqdm.write(f"  → Models desats (episodi {episodi})")
 
     # Desar models finals
     for pid, agent in enumerate([agent_0, agent_1]):
@@ -150,6 +159,7 @@ def main():
     print(f"\nEntrenament finalitzat.")
     print(f"Logs: {log_path}")
 
+    devnull.close()
 
 if __name__ == "__main__":
     main()
