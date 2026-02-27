@@ -1,5 +1,2 @@
 rlcard
 torch
-fastapi
-uvicorn[standard]
-websockets
