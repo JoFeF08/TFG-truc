@@ -39,6 +39,7 @@ class ModelInteractiu:
             senyes=config.get("senyes", False),
             puntuacio_final=config.get("puntuacio_final", 24),
             player_class=player_classes,
+            verbose=config.get("verbose", False),
         )
         self._game.init_game()
 

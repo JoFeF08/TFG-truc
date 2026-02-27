@@ -1,17 +1,10 @@
 import numpy as np
-from entorn.rols.player.player import TrucPlayer
+from entorn.rols.player.player_default import DefaultPlayer
 from entorn.rols.dealer import TrucDealer
 from entorn.rols.judger import TrucJudger
 from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST
 from enum import Enum
 
-
-DEBUG_MODE = False 
-
-def debug_print(*args, **kwargs):
-    """Imprimeix missatges només si DEBUG_MODE està activat"""
-    if DEBUG_MODE:
-        print(*args, **kwargs)
 
 class ResponseState(Enum):
     NO_PENDING = 0
@@ -20,15 +13,22 @@ class ResponseState(Enum):
 
 
 class TrucGame:
-    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=TrucPlayer):
+    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=DefaultPlayer, verbose=False):
         self.num_jugadors = num_jugadors
         self.cartes_jugador = cartes_jugador
         self.senyes = senyes
         self.puntuacio_final = puntuacio_final
         self.player_class = player_class
+        self.verbose = verbose
 
         self.np_random = np.random.RandomState()
         self.payoffs = [0] * self.num_jugadors
+        
+
+    def debug_print(self, *args, **kwargs):
+        """Imprimeix missatges només si self.verbose està activat"""
+        if self.verbose:
+            print(*args, **kwargs)
         
 
     def init_game(self):
@@ -111,9 +111,9 @@ class TrucGame:
                         punts_envit.append(punts)
                     
                     winner_team = self.judger.guanyador_envits(all_hands, self.ma)
-                    debug_print(f"=====>DEBUG: Envit acceptat. Punts: J0={punts_envit[0]}, J1={punts_envit[1]}. Guanyador: Equip {winner_team}. Punts guanyats: {self.envit_level}. Score abans: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Envit acceptat. Punts: J0={punts_envit[0]}, J1={punts_envit[1]}. Guanyador: Equip {winner_team}. Punts guanyats: {self.envit_level}. Score abans: {self.score}")
                     self.score[winner_team] += self.envit_level
-                    debug_print(f"=====>DEBUG: Score després: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
                     
                     if self.score[winner_team] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
@@ -153,9 +153,9 @@ class TrucGame:
                 elif action_str == 'fora_truc':
                     self.response_state = ResponseState.NO_PENDING
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
-                    debug_print(f"=====>DEBUG: Jugador {self.current_player} diu 'Fora' al Truc. Jugador {winner_team} guanya {self.previous_truc_level} punts. Score abans: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Jugador {self.current_player} diu 'Fora' al Truc. Jugador {winner_team} guanya {self.previous_truc_level} punts. Score abans: {self.score}")
                     self.score[winner_team] += self.previous_truc_level
-                    debug_print(f"=====>DEBUG: Score després: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
                     
                     if self.score[winner_team] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
@@ -253,12 +253,12 @@ class TrucGame:
                 if winner is not None:
                     self.turn_player = winner
                     self.ronda_winners.append(winner)
-                    debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. Guanyador: Jugador {winner}")
+                    self.debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. Guanyador: Jugador {winner}")
                 else:
                     # Empat
                     self.turn_player = self.ma
                     self.ronda_winners.append(-1)  # -1 indica empat
-                    debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. EMPAT")
+                    self.debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. EMPAT")
 
                 self.cartes_ronda = []
                 self.round_counter += 1
@@ -266,9 +266,9 @@ class TrucGame:
                 # Comprovar fi de mà just després de tancar una ronda (majoria o 3 rondes)
                 winner_ma = self.judger.guanyador_ma(self.ronda_winners, self.ma)
                 if winner_ma != -1:
-                    debug_print(f"=====>DEBUG: Mà acabada. Guanyador equip: {winner_ma}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Mà acabada. Guanyador equip: {winner_ma}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
                     self.score[winner_ma] += self.truc_level
-                    debug_print(f"=====>DEBUG: Score després: {self.score}")
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
                     if self.score[winner_ma] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player

@@ -15,6 +15,7 @@ class TrucEnv(Env):
         self.cartes_jugador = config.get('cartes_jugador', 3)
         self.puntuacio_final = config.get('puntuacio_final', 24)
         senyes = config.get('senyes', False)
+        verbose = config.get('verbose', False)
         player_class = config.get('player_class', None)
 
         if player_class:
@@ -22,12 +23,14 @@ class TrucEnv(Env):
                                  cartes_jugador=self.cartes_jugador, 
                                  senyes=senyes,
                                  puntuacio_final=self.puntuacio_final,
-                                 player_class=player_class)
+                                 player_class=player_class,
+                                 verbose=verbose)
         else:
              self.game = TrucGame(num_jugadors=self.num_jugadors, 
                                  cartes_jugador=self.cartes_jugador, 
                                  senyes=senyes,
-                                 puntuacio_final=self.puntuacio_final)
+                                 puntuacio_final=self.puntuacio_final,
+                                 verbose=verbose)
         
         config.setdefault('allow_step_back', False)
         config.setdefault('seed', None)
