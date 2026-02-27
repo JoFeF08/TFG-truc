@@ -29,6 +29,8 @@ class TrucEnv(Env):
                                  senyes=senyes,
                                  puntuacio_final=self.puntuacio_final)
         
+        config.setdefault('allow_step_back', False)
+        config.setdefault('seed', None)
         super().__init__(config)
         
         self.cartes = init_joc_cartes()
