@@ -1,4 +1,11 @@
 import sys
+import os
+
+# Permet executar aquest fitxer directament: afegir l'arrel del projecte a sys.path
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
 import time
 
 from entorn.cartes_accions import ACTION_LIST
@@ -91,3 +98,15 @@ class VistaConsola(Vista):
 
     def mostrar_sortint(self) -> None:
         print("\n  Sortint...")
+
+
+if __name__ == "__main__":
+    from controlador import Controlador, ModelInteractiu
+
+    vista = VistaConsola()
+    model = ModelInteractiu()
+    controlador = Controlador(vista, model)
+    try:
+        controlador.bucle_principal()
+    except KeyboardInterrupt:
+        vista.mostrar_sortint()
