@@ -1,6 +1,10 @@
+import sys
 import os
-import csv
 from pathlib import Path
+# Afegir l'arrel del projecte al path per poder importar 'entorn'
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import csv
 import torch
 import logging
 from contextlib import redirect_stdout
