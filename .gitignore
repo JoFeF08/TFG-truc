@@ -69,3 +69,11 @@ entrenament/models/
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
 .tmp/
+
+# MCP
+.mcp/
+
+# Jupyter
+.ipynb_checkpoints/
+.vscode/
+.jupyter_ystore.db
