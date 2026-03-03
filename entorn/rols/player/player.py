@@ -1,16 +1,27 @@
+from __future__ import annotations
 from abc import ABC, abstractmethod
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class TrucPlayer(ABC):
-    def __init__(self, player_id, np_random):
-        self.player_id = player_id
-        self.np_random = np_random
-        self.hand = []
-        self.ma_envits = []
+    """
+    Classe abstracta base per a qualsevol jugador de Truc.
+    Defineix la interfície mínima requerida per l'entorn TrucGame.
+    """
 
-    def get_player_id(self):
-        return self.player_id
+    def __init__(self, player_id: int, np_random: np.random.RandomState) -> None:
+        self._player_id = player_id
+        self.np_random = np_random
+        self.hand: list[str] = []
+        self.ma_envits: list[int] = []
+
+    @property
+    def player_id(self) -> int:
+        return self._player_id
 
     @abstractmethod
-    def triar_accio(self, estat):
-        pass
+    def triar_accio(self, estat: dict[str, Any]) -> int:
+        ...
