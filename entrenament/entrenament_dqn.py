@@ -63,7 +63,8 @@ class AgentCongelat:
         self.use_raw = False  
 
     def step(self, state):
-        return self.agent.eval_step(state)
+        action, _ = self.agent.eval_step(state)
+        return action
 
     def eval_step(self, state):
         return self.agent.eval_step(state)
