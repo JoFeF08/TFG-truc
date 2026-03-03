@@ -15,8 +15,8 @@ class Vista(Protocol):
         """Mostra l'estat actual del joc (taula, mà, puntuació, info de ronda)."""
         ...
 
-    def escollir_accio(self, accions_legals: list, estat: dict) -> int:
-        """Llista accions legals; retorna el codi d'acció escollit."""
+    def escollir_accio(self, accions_legals: list, estat: dict) -> int | None:
+        """Llista accions legals; retorna el codi d'acció escollit, o None si s'ha tancat."""
         ...
 
     def mostrar_accio(self, jugador_id: int, nom_accio: str, es_bot: bool) -> None:

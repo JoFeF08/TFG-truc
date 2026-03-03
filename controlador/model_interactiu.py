@@ -4,6 +4,7 @@ from entorn.game import TrucGame
 from entorn.cartes_accions import ACTION_LIST
 from entorn.rols.player.player import TrucPlayer
 from entorn.rols.player.player_default import DefaultPlayer
+from entorn.rols.player.models.model_factory import crear_model
 
 
 class _SlotHuma(TrucPlayer):
@@ -24,14 +25,30 @@ class ModelInteractiu:
     def iniciar(self, config: dict) -> None:
         self._num_jugadors = config.get("num_jugadors", 2)
         tipus = config.get("tipus_jugadors", {0: 0, 1: 1})
-        self._humans = {int(i) for i, t in tipus.items() if t == 0}
+        self._humans = set()
+
+        env_config = {
+            "num_jugadors": self._num_jugadors,
+            "cartes_jugador": config.get("cartes_jugador", 3),
+            "senyes": config.get("senyes", False),
+        }
 
         player_classes: dict = {}
         for i in range(self._num_jugadors):
-            if i in self._humans:
+            spec = tipus.get(i, tipus.get(str(i), {"tipus": "default"}))
+            
+            if not isinstance(spec, dict):
+                if int(spec) == 0:
+                    spec = {"tipus": "huma"}
+                else:
+                    spec = {"tipus": "default"}
+
+            if spec.get("tipus") == "huma":
+                self._humans.add(i)
                 player_classes[i] = _SlotHuma
             else:
-                player_classes[i] = DefaultPlayer
+                model = crear_model(spec, env_config)
+                player_classes[i] = lambda pid, rand, m=model: DefaultPlayer(pid, rand, model=m)
 
         self._game = TrucGame(
             num_jugadors=self._num_jugadors,

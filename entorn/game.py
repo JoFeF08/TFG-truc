@@ -37,7 +37,7 @@ class TrucGame:
         self.players = []
         for i in range(self.num_jugadors):
             if isinstance(self.player_class, dict):
-                p_class = self.player_class.get(i, TrucPlayer)
+                p_class = self.player_class.get(i, DefaultPlayer)
             else:
                 p_class = self.player_class
                 

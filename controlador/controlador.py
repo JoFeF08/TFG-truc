@@ -12,8 +12,8 @@ class Controlador:
         self.vista = vista
         self.model = model
 
-    def executar_partida(self) -> None:
-        config = self.vista.demanar_config()
+    def executar_partida(self, override_config: dict = None) -> None:
+        config = override_config if override_config is not None else self.vista.demanar_config()
         self.model.iniciar(config)
 
         while not self.model.es_final():
@@ -22,9 +22,17 @@ class Controlador:
                 estat = self.model.get_estat(pid)
                 self.vista.mostrar_estat(estat)
                 accio = self.vista.escollir_accio(estat["accions_legals"], estat)
+                if accio is None:
+                    return  # han tancat la finestra
                 self.model.aplicar_accio(accio)
                 self.vista.mostrar_accio(pid, ACTION_LIST[accio], es_bot=False)
             else:
+                # Mostrar l'estat des de perspectiva humana
+                huma_pid = self._trobar_huma()
+                if huma_pid is not None:
+                    estat_huma = self.model.get_estat(huma_pid)
+                    self.vista.mostrar_estat(estat_huma)
+
                 accio, nom = self.model.get_accio_bot(pid)
                 self.model.aplicar_accio(accio)
                 self.vista.mostrar_accio(pid, nom, es_bot=True)
@@ -38,3 +46,9 @@ class Controlador:
             if not self.vista.demanar_repetir():
                 self.vista.mostrar_sortint()
                 break
+
+    def _trobar_huma(self) -> int | None:
+        """Retorna l'ID del primer jugador humà, o None si no n'hi ha."""
+        if hasattr(self.model, '_humans') and self.model._humans:
+            return next(iter(self.model._humans))
+        return None

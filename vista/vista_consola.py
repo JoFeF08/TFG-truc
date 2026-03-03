@@ -22,7 +22,10 @@ class VistaConsola(Vista):
         "cartes_jugador": 3,
         "senyes": False,
         "puntuacio_final": 24,
-        "tipus_jugadors": {0: 0, 1: 1},
+        "tipus_jugadors": {
+            0: {"tipus": "huma"}, 
+            1: {"tipus": "default"}
+        },
     }
 
     def demanar_config(self) -> dict:
