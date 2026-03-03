@@ -70,10 +70,13 @@ entrenament/models/
 temp/
 .tmp/
 
-# MCP
-.mcp/
+# Entorns de desenvolupament
+.vscode/
 
 # Jupyter
 .ipynb_checkpoints/
-.vscode/
 .jupyter_ystore.db
+
+
+# MCP
+.mcp/
