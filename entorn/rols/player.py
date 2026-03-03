@@ -1,13 +1,11 @@
 from __future__ import annotations
 from typing import Any, TYPE_CHECKING
-from entorn.rols.player.player import TrucPlayer
 
 if TYPE_CHECKING:
     import numpy as np
-    from entorn.rols.player.models import TrucModel
 
 
-class DefaultPlayer(TrucPlayer):
+class TrucPlayer:
     """
     Jugador que delega la tria d'acció en un model injectat.
     Si el model és None, actua com un agent per defecte i tria una acció
@@ -20,8 +18,11 @@ class DefaultPlayer(TrucPlayer):
         np_random: np.random.RandomState,
         model: TrucModel | None = None,
     ) -> None:
-        super().__init__(player_id, np_random)
+        self.player_id = player_id
+        self.np_random = np_random
         self.model = model
+        self.hand: list[str] = []
+        self.ma_envits: list[int] = []
 
     def triar_accio(self, estat: dict[str, Any]) -> int:
         if self.model is not None:

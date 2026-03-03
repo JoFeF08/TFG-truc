@@ -1,5 +1,5 @@
 import numpy as np
-from entorn.rols.player.player_default import DefaultPlayer
+from entorn.rols.player import TrucPlayer
 from entorn.rols.dealer import TrucDealer
 from entorn.rols.judger import TrucJudger
 from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST
@@ -13,7 +13,7 @@ class ResponseState(Enum):
 
 
 class TrucGame:
-    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=DefaultPlayer, verbose=False):
+    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=TrucPlayer, verbose=False):
         self.num_jugadors = num_jugadors
         self.cartes_jugador = cartes_jugador
         self.senyes = senyes
@@ -37,7 +37,7 @@ class TrucGame:
         self.players = []
         for i in range(self.num_jugadors):
             if isinstance(self.player_class, dict):
-                p_class = self.player_class.get(i, DefaultPlayer)
+                p_class = self.player_class.get(i, TrucPlayer)
             else:
                 p_class = self.player_class
                 

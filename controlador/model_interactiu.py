@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from entorn.game import TrucGame
 from entorn.cartes_accions import ACTION_LIST
-from entorn.rols.player.player import TrucPlayer
-from entorn.rols.player.player_default import DefaultPlayer
-from entorn.rols.player.models.model_factory import crear_model
+from entorn.rols import TrucPlayer
+from models import crear_model
 
 
 class _SlotHuma(TrucPlayer):
@@ -48,7 +47,7 @@ class ModelInteractiu:
                 player_classes[i] = _SlotHuma
             else:
                 model = crear_model(spec, env_config)
-                player_classes[i] = lambda pid, rand, m=model: DefaultPlayer(pid, rand, model=m)
+                player_classes[i] = lambda pid, rand, m=model: TrucPlayer(pid, rand, model=m)
 
         self._game = TrucGame(
             num_jugadors=self._num_jugadors,
