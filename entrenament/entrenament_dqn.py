@@ -1,6 +1,7 @@
 import sys
 import os
 from pathlib import Path
+from datetime import datetime
 # Afegir l'arrel del projecte al path per poder importar 'entorn'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -46,8 +47,11 @@ LR_DECAY_FACTOR = 0.5
 
 # Carpetes de sortida
 BASE_DIR  = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "models"
-LOG_DIR   = BASE_DIR / "logs"
+TIMESTAMP = datetime.now().strftime("%d_%m_%y_a_les_%H%M")
+RUN_DIR   = BASE_DIR / "registres" / TIMESTAMP
+MODEL_DIR = RUN_DIR / "models"
+LOG_DIR   = RUN_DIR / "logs"
+
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -157,7 +161,7 @@ def main():
             for pg in dqn_agent.q_estimator.optimizer.param_groups:
                 pg['lr'] *= LR_DECAY_FACTOR
             new_lr = dqn_agent.q_estimator.optimizer.param_groups[0]['lr']
-            tqdm.write(f"  📉 LR reduït a {new_lr:.2e} (episodi {episodi})")
+            tqdm.write(f"LR reduït a {new_lr:.2e} (episodi {episodi})")
 
         # Avaluació periòdica contra Random
         if episodi % EVALUATE_EVERY == 0:
@@ -178,7 +182,7 @@ def main():
             tqdm.write(
                 f"[Episodi {episodi:>6}]  reward mig: {reward_mig:.4f}  "
                 f"vic%: {pct_victoria:.1f}%  lr={current_lr:.2e}  "
-                f"{'⭐ NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
+                f"{'NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
             )
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
@@ -197,7 +201,7 @@ def main():
         # Copiar el millor com a final
         import shutil
         shutil.copy2(best_path, final_path)
-        print(f"\n✅ Model final = millor model (episodi {best_episodi}, reward={best_reward:.4f})")
+        print(f"\nModel final = millor model (episodi {best_episodi}, reward={best_reward:.4f})")
     else:
         torch.save(dqn_agent.q_estimator.qnet.state_dict(), final_path)
         print(f"\nModel final desat (últim): {final_path}")

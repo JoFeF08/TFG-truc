@@ -1,6 +1,7 @@
 import sys
 import os
 from pathlib import Path
+from datetime import datetime
 # Afegir l'arrel del projecte al path per poder importar 'entorn'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -48,8 +49,11 @@ LR_DECAY_FACTOR = 0.5
 
 # Carpetes de sortida
 BASE_DIR  = Path(__file__).resolve().parent
-MODEL_DIR = BASE_DIR / "models"
-LOG_DIR   = BASE_DIR / "logs"
+TIMESTAMP = datetime.now().strftime("%d_%m_%y_a_les_%H%M")
+RUN_DIR   = BASE_DIR / "registres" / TIMESTAMP
+MODEL_DIR = RUN_DIR / "models"
+LOG_DIR   = RUN_DIR / "logs"
+
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -140,7 +144,7 @@ def main():
                     pg['lr'] *= LR_DECAY_FACTOR
             rl_lr = agent_0._rl_agent.q_estimator.optimizer.param_groups[0]['lr']
             sl_lr = agent_0.policy_network_optimizer.param_groups[0]['lr']
-            tqdm.write(f"  📉 LR reduït: RL={rl_lr:.2e}, SL={sl_lr:.2e} (episodi {episodi})")
+            tqdm.write(f"LR reduït: RL={rl_lr:.2e}, SL={sl_lr:.2e} (episodi {episodi})")
 
         # Avaluació periòdica
         if episodi % EVALUATE_EVERY == 0:
@@ -168,7 +172,7 @@ def main():
             tqdm.write(
                 f"[Episodi {episodi:>6}]  reward mig p0: {reward_mig:.4f}  vic_pct: {pct_victoria:.1f}%  "
                 f"(mode p0={mode_p0}, p1={mode_p1})  "
-                f"{'⭐ NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
+                f"{'NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
             )
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
@@ -197,7 +201,7 @@ def main():
 
     # ─── Enfrontament p0 vs p1: el guanyador és el model final ────────────────
     print(f"\n{'═'*60}")
-    print("🥊 ENFRONTAMENT: p0_best vs p1_best")
+    print("ENFRONTAMENT: p0_best vs p1_best")
     print(f"{'═'*60}")
 
     NUM_PLAYOFF = 500
@@ -250,8 +254,8 @@ def main():
         guanyador = "p1"
         shutil.copy2(os.path.join(MODEL_DIR, "nfsp_truc_p1_best.pt"), final_path)
 
-    print(f"\n  🏆 GUANYADOR: {guanyador} → guardat com a nfsp_truc.pt")
-    print(f"\n✅ Entrenament NFSP complet (millor ep={best_episodi}, reward={best_reward:.4f})")
+    print(f"\nGUANYADOR: {guanyador} → guardat com a nfsp_truc.pt")
+    print(f"\nEntrenament NFSP complet (millor ep={best_episodi}, reward={best_reward:.4f})")
     print(f"Logs: {log_path}")
 
     devnull.close()
