@@ -1,7 +1,7 @@
 from controlador import Controlador, ModelInteractiu
 from vista.vista_desktop.vista_desktop import VistaDesktop
 
-MODEL_PATH = r"c:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\registres\27_2_26_a_les_2002\models\nfsp_truc_p0.pt"
+MODEL_PATH = r"c:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\registres\3_3_26_a_les_2315\models\dqn_truc_best.pt"
 
 config = {
     "num_jugadors": 2,
@@ -10,7 +10,7 @@ config = {
     "puntuacio_final": 24,
     "tipus_jugadors": {
         0: {"tipus": "huma"},
-        1: {"tipus": "nfsp", "ruta": MODEL_PATH},
+        1: {"tipus": "dqn", "ruta": MODEL_PATH},
     },
 }
 

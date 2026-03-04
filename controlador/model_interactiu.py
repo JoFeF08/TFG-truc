@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from entorn.game import TrucGame
 from entorn.cartes_accions import ACTION_LIST
-from entorn.rols import TrucPlayer
+from entorn.rols.player import TrucPlayer
 from models import crear_model
 
 

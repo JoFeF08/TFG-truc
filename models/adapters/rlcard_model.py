@@ -1,7 +1,7 @@
 import os
 from typing import Any, Callable
 
-from models.base import TrucModel
+from models.loader import TrucModel
 
 _DEFAULT_HIDDEN_LAYERS = [256, 256]
 
@@ -111,5 +111,5 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
             mlp_layers=hl,
             device=dev,
         ),
-        carregar_pesos=lambda ag, ck: ag.q_estimator.qnet.load_state_dict(ck["q_net"]),
+        carregar_pesos=lambda ag, ck: ag.q_estimator.qnet.load_state_dict(ck),
     )

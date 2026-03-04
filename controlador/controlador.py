@@ -14,6 +14,8 @@ class Controlador:
 
     def executar_partida(self, override_config: dict = None) -> None:
         config = override_config if override_config is not None else self.vista.demanar_config()
+        if override_config is not None and hasattr(self.vista, '_config'):
+            self.vista._config = config
         self.model.iniciar(config)
 
         while not self.model.es_final():
