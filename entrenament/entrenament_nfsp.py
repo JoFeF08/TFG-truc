@@ -2,7 +2,6 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
-# Afegir l'arrel del projecte al path per poder importar 'entorn'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import csv
@@ -15,7 +14,6 @@ from rlcard.agents import NFSPAgent, RandomAgent
 from rlcard.utils import set_seed, reorganize
 from entorn import TrucEnv
 
-# ─── Configuració ─────────────────────────────────────────────────────────────
 VERBOSE_TRAINING = False
 
 # Silenciar els loggers
@@ -26,11 +24,11 @@ else:
     logging.basicConfig(level=logging.INFO, force=True)
     logging.getLogger().setLevel(logging.INFO)
 
-# ─── Configuració ─────────────────────────────────────────────────────────────
+# Configuració
 SEED            = 42
-NUM_EPISODES    = 200_000    # Episodis d'entrenament (4x més)
-EVALUATE_EVERY  = 2_000      # Cada quants episodis avaluem
-EVALUATE_NUM    = 500        # Partides d'avaluació (més fiable)
+NUM_EPISODES    = 200_000
+EVALUATE_EVERY  = 2_000
+EVALUATE_NUM    = 500
 SAVE_EVERY      = 20_000     # Cada quants episodis guardem el model
 
 # Hiperparàmetres NFSP
@@ -38,10 +36,10 @@ HIDDEN_LAYERS       = [256, 256]
 RL_LEARNING_RATE    = 1e-3
 SL_LEARNING_RATE    = 1e-3   # Supervised learning (política mitjana)
 BATCH_SIZE          = 256
-RESERVOIR_SIZE      = 100_000 # Buffer per SL (5x més gran)
-Q_REPLAY_SIZE       = 100_000 # Buffer per RL (5x més gran)
+RESERVOIR_SIZE      = 100_000 # Buffer per SL
+Q_REPLAY_SIZE       = 100_000 # Buffer per RL
 Q_UPDATE_TARGET     = 300
-ANTICIPATORY_PARAM  = 0.3    # η: més exploració de best-response (era 0.1)
+ANTICIPATORY_PARAM  = 0.3    # η
 
 # Learning Rate Scheduling
 LR_DECAY_AT     = [NUM_EPISODES // 4, NUM_EPISODES // 2, 3 * NUM_EPISODES // 4]
@@ -56,17 +54,14 @@ LOG_DIR   = RUN_DIR / "logs"
 
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 def avaluar(env, num_partides: int) -> float:
-    """Calcula el reward mig del jugador 0 sobre num_partides."""
     total = sum(env.run(is_training=False)[1][0] for _ in range(num_partides))
     return total / num_partides
 
 
 def crear_agent_nfsp(env, device):
-    """Crea un agent NFSP amb la configuració definida."""
     return NFSPAgent(
         num_actions=env.num_actions,
         state_shape=env.state_shape[0],
@@ -88,7 +83,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Dispositiu: {device}")
 
-    # Entorns d'entrenament i avaluació
+    # Entorns
     env_config = {
         'num_jugadors': 2, 
         'cartes_jugador': 3, 
@@ -105,7 +100,7 @@ def main():
 
     env.set_agents([agent_0, agent_1])
 
-    # Avaluació: agent_0 vs Random
+    # Avaluació
     random_agent = RandomAgent(num_actions=env.num_actions)
     eval_env.set_agents([agent_0, random_agent])
 
@@ -114,17 +109,15 @@ def main():
     with open(log_path, "w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(["episodi", "reward_mig_p0", "vic_pct_p0", "mode_p0", "mode_p1", "millor_historica"])
 
-    print(f"Iniciant entrenament NFSP ({NUM_EPISODES} episodis, self-play)...")
+    print(f"Entrenant NFSP ({NUM_EPISODES} episodis)...")
     devnull = open(os.devnull, 'w')
     best_reward = -float('inf')
     best_episodi = 0
 
     for episodi in tqdm(range(1, NUM_EPISODES + 1), desc="Entrenant NFSP", unit="ep"):
-        # Un episodi = una partida completa de Truc
         trajectories, payoffs = env.run(is_training=True)
         trajectories = reorganize(trajectories, payoffs)
 
-        # Alimentar les transicions a cada agent
         if not VERBOSE_TRAINING:
             with redirect_stdout(devnull):
                 for i, agent in enumerate([agent_0, agent_1]):
@@ -135,7 +128,7 @@ def main():
                 for ts in trajectories[i]:
                     agent.feed(ts)
 
-        # Learning Rate Scheduling (ambdós optimitzadors: RL i SL)
+        # Learning Rate Scheduling
         if episodi in LR_DECAY_AT:
             for ag in [agent_0, agent_1]:
                 for pg in ag._rl_agent.q_estimator.optimizer.param_groups:
@@ -170,15 +163,15 @@ def main():
                     }, best_path)
 
             tqdm.write(
-                f"[Episodi {episodi:>6}]  reward mig p0: {reward_mig:.4f}  vic_pct: {pct_victoria:.1f}%  "
-                f"(mode p0={mode_p0}, p1={mode_p1})  "
-                f"{'NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
+                f"[Episodi {episodi:>6}] reward mig p0: {reward_mig:.4f} | vic_pct: {pct_victoria:.1f}% | "
+                f"mode p0={mode_p0}, p1={mode_p1} | "
+                f"{'nou millor' if es_millor else f'millor: ep {best_episodi}'}"
             )
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow([episodi, reward_mig, pct_victoria, mode_p0, mode_p1, best_reward])
 
-        # Guardar models periòdicament
+        # Guardar models
         if episodi % SAVE_EVERY == 0:
             for pid, agent in enumerate([agent_0, agent_1]):
                 path = os.path.join(MODEL_DIR, f"nfsp_truc_p{pid}_ep{episodi}.pt")
@@ -188,7 +181,7 @@ def main():
                 }, path)
             tqdm.write(f"  → Models desats (episodi {episodi})")
 
-    # Desar millors models de cada agent
+    # Desar millors models
     import shutil
     for pid in range(2):
         best_candidate = os.path.join(MODEL_DIR, f"nfsp_truc_p{pid}_best.pt")
@@ -199,14 +192,11 @@ def main():
                 'sl_net': agent.policy_network.state_dict(),
             }, best_candidate)
 
-    # ─── Enfrontament p0 vs p1: el guanyador és el model final ────────────────
-    print(f"\n{'═'*60}")
-    print("ENFRONTAMENT: p0_best vs p1_best")
-    print(f"{'═'*60}")
+    # Enfrontament p0 vs p1: el guanyador és el model final
+    print("\nEnfrontament final: p0_best vs p1_best")
 
     NUM_PLAYOFF = 500
 
-    # Carregar els millors agents
     def carregar_nfsp_best(path, env, device):
         agent = crear_agent_nfsp(env, device)
         ck = torch.load(path, map_location=device, weights_only=True)
@@ -254,8 +244,8 @@ def main():
         guanyador = "p1"
         shutil.copy2(os.path.join(MODEL_DIR, "nfsp_truc_p1_best.pt"), final_path)
 
-    print(f"\nGUANYADOR: {guanyador} → guardat com a nfsp_truc.pt")
-    print(f"\nEntrenament NFSP complet (millor ep={best_episodi}, reward={best_reward:.4f})")
+    print(f"\nGuanya {guanyador} → model desat com a nfsp_truc.pt")
+    print(f"Entrenament complet (millor ep={best_episodi}, reward={best_reward:.4f})")
     print(f"Logs: {log_path}")
 
     devnull.close()

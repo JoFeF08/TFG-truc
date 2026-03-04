@@ -2,7 +2,6 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime
-# Afegir l'arrel del projecte al path per poder importar 'entorn'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import csv
@@ -15,7 +14,6 @@ from rlcard.agents import DQNAgent, RandomAgent
 from rlcard.utils import set_seed, reorganize
 from entorn import TrucEnv
 
-# ─── Configuració ─────────────────────────────────────────────────────────────
 VERBOSE_TRAINING = False
 
 # Silenciar els loggers
@@ -26,22 +24,22 @@ else:
     logging.basicConfig(level=logging.INFO, force=True)
     logging.getLogger().setLevel(logging.INFO)
 
-# ─── Configuració ─────────────────────────────────────────────────────────────
+# Configuració
 SEED            = 42
-NUM_EPISODES    = 200_000    # Episodis d'entrenament (4x més)
-EVALUATE_EVERY  = 2_000      # Cada quants episodis avaluem
-EVALUATE_NUM    = 500        # Partides d'avaluació (més fiable)
+NUM_EPISODES    = 200_000
+EVALUATE_EVERY  = 2_000
+EVALUATE_NUM    = 500
 SAVE_EVERY      = 20_000     # Cada quants episodis guardem checkpoint
 
 # Hiperparàmetres DQN
 LAYERS          = [256, 256]
 LEARNING_RATE   = 5e-4
 BATCH_SIZE      = 256
-MEMORY_SIZE     = 100_000    # 5x més gran per estabilitzar
+MEMORY_SIZE     = 100_000
 UPDATE_TARGET   = 500        
 EPSILON_MIN     = 0.05
 
-# Learning Rate Scheduling: reduir LR al 25%, 50% i 75% de l'entrenament
+# Learning Rate Scheduling
 LR_DECAY_AT     = [NUM_EPISODES // 4, NUM_EPISODES // 2, 3 * NUM_EPISODES // 4]
 LR_DECAY_FACTOR = 0.5
 
@@ -54,7 +52,6 @@ LOG_DIR   = RUN_DIR / "logs"
 
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 class AgentCongelat:
@@ -75,7 +72,6 @@ class AgentCongelat:
 
 
 def crear_dqn_agent(env, device):
-    """Crea un DQNAgent amb la configuració definida."""
     return DQNAgent(
         num_actions=env.num_actions,
         state_shape=env.state_shape[0],
@@ -92,13 +88,11 @@ def crear_dqn_agent(env, device):
 
 
 def copiar_pesos(src_agent, dst_agent):
-    """Copia els pesos de la Q-network de src a dst."""
     state_dict = src_agent.q_estimator.qnet.state_dict()
     dst_agent.q_estimator.qnet.load_state_dict(state_dict)
 
 
 def avaluar(env, num_partides: int) -> float:
-    """Calcula el reward mig del jugador 0 sobre num_partides."""
     total = sum(env.run(is_training=False)[1][0] for _ in range(num_partides))
     return total / num_partides
 
@@ -122,7 +116,7 @@ def main():
     # Agent principal (entrena) i oponent congelat (millor versió històrica)
     dqn_agent = crear_dqn_agent(env, device)
     oponent_base = crear_dqn_agent(env, device)
-    copiar_pesos(dqn_agent, oponent_base)  # Inicialitza amb els mateixos pesos
+    copiar_pesos(dqn_agent, oponent_base)
     oponent = AgentCongelat(oponent_base)
 
     # Avaluació vs Random (baseline consistent)
@@ -136,18 +130,16 @@ def main():
     with open(log_path, "w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(["episodi", "reward_mig", "victoires", "millor_historica", "lr"])
 
-    print(f"Iniciant entrenament DQN ({NUM_EPISODES} episodis, self-play vs millor)...")
+    print(f"Entrenant DQN ({NUM_EPISODES} episodis)...")
     
     devnull = open(os.devnull, 'w')
     best_reward = -float('inf')
     best_episodi = 0
 
     for episodi in tqdm(range(1, NUM_EPISODES + 1), desc="Entrenant DQN", unit="ep"):
-        # Un episodi = una partida completa de Truc
         trajectories, payoffs = env.run(is_training=True)
         trajectories = reorganize(trajectories, payoffs)
 
-        # Alimentar les transicions NOMÉS a l'agent principal (no l'oponent)
         if not VERBOSE_TRAINING:
             with redirect_stdout(devnull):
                 for ts in trajectories[0]:
@@ -173,16 +165,16 @@ def main():
             if es_millor:
                 best_reward = reward_mig
                 best_episodi = episodi
+                
                 # Guardar millor model
                 best_path = os.path.join(MODEL_DIR, "dqn_truc_best.pt")
                 torch.save(dqn_agent.q_estimator.qnet.state_dict(), best_path)
-                # Actualitzar l'oponent amb els millors pesos
                 copiar_pesos(dqn_agent, oponent_base)
 
             tqdm.write(
-                f"[Episodi {episodi:>6}]  reward mig: {reward_mig:.4f}  "
-                f"vic%: {pct_victoria:.1f}%  lr={current_lr:.2e}  "
-                f"{'NOU MILLOR!' if es_millor else f'(millor: ep{best_episodi}, r={best_reward:.4f})'}"
+                f"[Episodi {episodi:>6}] reward mig: {reward_mig:.4f} | "
+                f"vic: {pct_victoria:.1f}% | lr={current_lr:.2e} | "
+                f"{'nou millor' if es_millor else f'millor: ep {best_episodi}'}"
             )
 
             with open(log_path, "a", newline="", encoding="utf-8") as f:
@@ -194,11 +186,10 @@ def main():
             torch.save(dqn_agent.q_estimator.qnet.state_dict(), path)
             tqdm.write(f"  → Checkpoint desat a {path}")
 
-    # Desar model final = MILLOR model (no l'últim!)
+    # Desar MILLOR model
     final_path = os.path.join(MODEL_DIR, "dqn_truc.pt")
     best_path = os.path.join(MODEL_DIR, "dqn_truc_best.pt")
     if os.path.exists(best_path):
-        # Copiar el millor com a final
         import shutil
         shutil.copy2(best_path, final_path)
         print(f"\nModel final = millor model (episodi {best_episodi}, reward={best_reward:.4f})")
