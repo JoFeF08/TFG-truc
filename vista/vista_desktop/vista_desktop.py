@@ -11,7 +11,7 @@ _IMG_DIR = Path(__file__).resolve().parent / "img_iu" / "cartesSeparades"
 
 ACCIONS_CAT = [
     "Jugar carta 1", "Jugar carta 2", "Jugar carta 3",
-    "Apostar envit", "Truc",
+    "Apostar envit", "Apostar truc",
     "Vull envit", "Vull truc", "Fora envit", "Fora truc",
     "Passar",
     "Senya 11 bastos", "Senya 10 ors", "Senya as espases",
@@ -238,6 +238,7 @@ class VistaDesktop:
         return self._wait()
 
     def _build_game_ui(self, accions_legals, state, readonly=False):
+        self._last_state = state
         self._clear()
         root = self._root
 
@@ -278,7 +279,22 @@ class VistaDesktop:
                     if tecla:
                         key_to_action[tecla] = action_id
                     continue 
+
+                # Noms dinàmics per Apostes
+                if action_id == 3: # Apostar envit
+                    lvl = estat_envit.get("level", 0)
+                    if lvl == 0: label = "Envit"
+                    elif lvl == 2: label = "Tornar-hi"
+                    elif lvl == 4: label = "Dos més"
+                    elif lvl >= 6: label = "Falta"
                     
+                elif action_id == 4: # Apostar truc
+                    lvl = estat_truc.get("level", 1)
+                    if lvl == 1: label = "Truc"
+                    elif lvl == 3: label = "Retruc"
+                    elif lvl == 6: label = "Val Nou"
+                    elif lvl >= 9: label = "Joc Fora"
+
                 b = tk.Button(
                     btn_frame, text=label + (f"  [{tecla.upper()}]" if tecla else ""),
                     bg=BG_BTN, fg="white",
@@ -369,47 +385,46 @@ class VistaDesktop:
 
         LBL_H = 18
         ordered_pids = [id_jugador] + [p for p in range(num_jugadors) if p != id_jugador]
+        
+        # Mida fixa d'alçada asssumint que sempre s'hi poden col·locar 3 cartes
+        STEP_Y = 40
+        max_cards_visuals = 3
+        canvas_h = LBL_H + (max_cards_visuals - 1) * STEP_Y + CARD_H + 4
+        
+        canvas = tk.Canvas(center_box, bg="#0d2a0e", highlightthickness=0, height=canvas_h)
+        canvas.pack(fill="x")
 
-        if not cartes_per_mostrar:
-            row_labels = tk.Frame(center_box, bg="#0d2a0e")
-            row_labels.pack(fill="x")
-            for pid in ordered_pids:
-                tk.Label(row_labels, text=f"J{pid}", bg="#0d2a0e", fg="#9aca9a",
-                         font=("", 9, "bold")).pack(side="left", expand=True)
-            tk.Label(center_box, text="—", bg="#0d2a0e", fg=FG_DIM, font=("", 11)).pack()
-        else:
-            STEP_Y = 40
-            max_cards = max(len(v) for v in piles.values()) if piles else 1
-            canvas_h = LBL_H + (max_cards - 1) * STEP_Y + CARD_H + 4
-            canvas = tk.Canvas(center_box, bg="#0d2a0e",
-                               highlightthickness=0, height=canvas_h)
-            canvas.pack(fill="x")
+        def _place_piles(event=None):
+            w = canvas.winfo_width()
+            if w < 10: w = 400
+            slot_w = w // num_jugadors
+            for wid in canvas.find_all():
+                canvas.delete(wid)
+            for col, pid in enumerate(ordered_pids):
+                cx = slot_w * col + slot_w // 2
+                cards = piles.get(pid, [])
+                
+                # Etiqueta de la columna (nom jugador)
+                lbl = tk.Label(canvas, text=f"J{pid}", bg="#0d2a0e", fg="#9aca9a", font=("", 9, "bold"))
+                canvas.create_window(cx, 0, window=lbl, anchor="n")
+                
+                if not cards and not cartes_per_mostrar:
+                    # En cas que estiguem a ronda 0 inici, mostrem un guió sota el text
+                    if col == 0:
+                        guio = tk.Label(canvas, text="—", bg="#0d2a0e", fg=FG_DIM, font=("", 11))
+                        canvas.create_window(w // 2, LBL_H + max_cards_visuals * STEP_Y // 2, window=guio, anchor="center")
+                    
+                for j, card in enumerate(cards):
+                    cf = tk.Frame(canvas, bg="#0d2a0e")
+                    img = self._get_card_image(card)
+                    if img:
+                        tk.Label(cf, image=img, bg="#0d2a0e").pack()
+                    else:
+                        tk.Label(cf, text=card, bg="#2d5a30", fg=FG, width=8, height=5, relief="ridge").pack()
+                    canvas.create_window(cx, LBL_H + j * STEP_Y, window=cf, anchor="n")
 
-            def _place_piles(event=None):
-                w = canvas.winfo_width()
-                if w < 10:
-                    w = 400
-                slot_w = w // num_jugadors
-                for wid in canvas.find_all():
-                    canvas.delete(wid)
-                for col, pid in enumerate(ordered_pids):
-                    cx = slot_w * col + slot_w // 2
-                    cards = piles.get(pid, [])
-                    lbl = tk.Label(canvas, text=f"J{pid}", bg="#0d2a0e",
-                                   fg="#9aca9a", font=("", 9, "bold"))
-                    canvas.create_window(cx, 0, window=lbl, anchor="n")
-                    for j, card in enumerate(cards):
-                        cf = tk.Frame(canvas, bg="#0d2a0e")
-                        img = self._get_card_image(card)
-                        if img:
-                            tk.Label(cf, image=img, bg="#0d2a0e").pack()
-                        else:
-                            tk.Label(cf, text=card, bg="#2d5a30", fg=FG,
-                                     width=8, height=5, relief="ridge").pack()
-                        canvas.create_window(cx, LBL_H + j * STEP_Y, window=cf, anchor="n")
-
-            canvas.bind("<Configure>", _place_piles)
-            canvas.after(10, _place_piles)
+        canvas.bind("<Configure>", _place_piles)
+        canvas.after(10, _place_piles)
 
         # Senyes d'aquesta mà
         if self._config.get("senyes", False) and hist_senyes:
@@ -499,9 +514,26 @@ class VistaDesktop:
 
 
     # mostrar_*
+    # mostrar_*
     def mostrar_accio(self, jugador_id: int, nom_accio: str, es_bot: bool) -> None:
         prefix = "Bot" if es_bot else "Tu"
-        self._action_log.append((jugador_id, prefix, nom_accio))
+        nom_contextual = nom_accio
+        
+        if hasattr(self, '_last_state'):
+            if nom_accio == "apostar_envit":
+                lvl = self._last_state.get("estat_envit", {}).get("level", 0)
+                if lvl == 0: nom_contextual = "Envit"
+                elif lvl == 2: nom_contextual = "Tornar-hi"
+                elif lvl == 4: nom_contextual = "Dos més"
+                elif lvl >= 6: nom_contextual = "Falta"
+            elif nom_accio == "apostar_truc":
+                lvl = self._last_state.get("estat_truc", {}).get("level", 1)
+                if lvl == 1: nom_contextual = "Truc"
+                elif lvl == 3: nom_contextual = "Retruc"
+                elif lvl == 6: nom_contextual = "Val Nou"
+                elif lvl >= 9: nom_contextual = "Joc Fora"
+
+        self._action_log.append((jugador_id, prefix, nom_contextual))
         if es_bot:
             time.sleep(self.BOT_DELAY_S)
 
