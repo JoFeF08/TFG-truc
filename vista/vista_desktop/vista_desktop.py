@@ -241,7 +241,7 @@ class VistaDesktop:
         self._clear()
         root = self._root
 
-        fase_torn = state.get("fase_torn", 2)
+        fase_torn = state.get("fase_torn", 1)
         id_jugador = state.get("id_jugador", 0)
         ma_jugador = state.get("ma_jugador", [])
         puntuacio = state.get("puntuacio", [0, 0])
@@ -254,7 +254,7 @@ class VistaDesktop:
 
         num_jugadors = state.get("num_jugadors", self._config.get("num_jugadors", 2))
         dors_img = self._get_dors_image()
-        is_fase_cartes = fase_torn == 2
+        is_fase_cartes = fase_torn == 1
 
         # Panell d'accions (o "Esperant..." en mode només lectura)
         BOTTOM_BAR_H = 64
@@ -272,12 +272,16 @@ class VistaDesktop:
                 label = ACCIONS_CAT[action_id] if action_id < len(ACCIONS_CAT) else f"Acció {action_id}"
                 tecla = ACCIO_TECLA.get(action_id, "")
                 is_play = action_id <= 2
+                
                 if is_play and action_id < len(ma_jugador):
-                    label = f"Carta {action_id + 1} ({ma_jugador[action_id]})"
                     tecla = str(action_id + 1)
+                    if tecla:
+                        key_to_action[tecla] = action_id
+                    continue 
+                    
                 b = tk.Button(
                     btn_frame, text=label + (f"  [{tecla.upper()}]" if tecla else ""),
-                    bg=BG_BTN_CARD if is_play else BG_BTN, fg="white",
+                    bg=BG_BTN, fg="white",
                     relief="flat", padx=12, pady=8, font=("", 10, "bold"),
                     cursor="hand2", command=lambda a=action_id: self._submit_action(a),
                 )
@@ -374,7 +378,7 @@ class VistaDesktop:
                          font=("", 9, "bold")).pack(side="left", expand=True)
             tk.Label(center_box, text="—", bg="#0d2a0e", fg=FG_DIM, font=("", 11)).pack()
         else:
-            STEP_Y = 25
+            STEP_Y = 40
             max_cards = max(len(v) for v in piles.values()) if piles else 1
             canvas_h = LBL_H + (max_cards - 1) * STEP_Y + CARD_H + 4
             canvas = tk.Canvas(center_box, bg="#0d2a0e",

@@ -57,7 +57,7 @@ class TrucGame:
         self.current_player = self.ma
         self.turn_player = self.ma
 
-        self.turn_phase = 0 if self.senyes else 1  # 0 (Senyals), 1 (Apostes), 2 (Joc/Cartes)
+        self.turn_phase = 0 if self.senyes else 1  # 0 (Senyals), 1 (Joc/Apostes)
         self.response_state = ResponseState.NO_PENDING # Estat de resposta actual
 
         self.hist_cartes = []
@@ -173,9 +173,7 @@ class TrucGame:
             
         elif action_str == 'passar':
             if self.turn_phase == 0:
-                self.turn_phase = 1 # Senyal -> Apostes
-            elif self.turn_phase == 1:
-                self.turn_phase = 2 # Apostes -> Jugar
+                self.turn_phase = 1 # Senyal -> Joc i Apostes
             
             return self._get_return_state()
             
@@ -373,7 +371,7 @@ class TrucGame:
                      actions.append(ACTION_SPACE[act_str])
             return actions
 
-        # Fase 1: Apostes
+        # Fase 1: Joc i Apostes
         if self.turn_phase == 1:            
             # Envit: Només si ningú ha cantat res encara i primera ronda
             if self.envit_level == 0 and self.round_counter == 0:
@@ -384,15 +382,11 @@ class TrucGame:
                  actions.append(ACTION_SPACE['apostar_truc'])
             
             actions.append(ACTION_SPACE['fora_truc'])
-            actions.append(ACTION_SPACE['passar'])
             
-            return actions
-
-        # Fase 2: Jugar Carta
-        if self.turn_phase == 2:
             num_cards = len(player.hand)
             for i in range(num_cards):
                 actions.append(ACTION_SPACE[f'play_card_{i}'])
+
             return actions
 
 
@@ -413,6 +407,15 @@ class TrucGame:
 
     def is_over(self):
         return max(self.score) >= self.puntuacio_final
+
+    def get_payoffs(self):
+        payoffs = []
+        for pid in range(self.num_jugadors):
+            my_team = pid % 2
+            other_team = (pid + 1) % 2
+            diff = (self.score[my_team] - self.score[other_team]) / self.puntuacio_final
+            payoffs.append(diff)
+        return payoffs
 
     def _reset_hand_state(self):
         # Avançar mà
