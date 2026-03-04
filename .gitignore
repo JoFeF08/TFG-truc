@@ -63,7 +63,7 @@ venv.bak/
 doc/temp
 referencies/temp
 dades_partides/
-entrenament/registres/
+entrenament/entrenamentRLCard/registres/
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
