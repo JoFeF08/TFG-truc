@@ -98,9 +98,16 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     """
     Fa servir la factoria comuna per encapsular i generar un model Deep Q-Network (DQN).
     Tan sols mapeja la xarxa Q ('q_net').
+    
+    Si l'especificació inclou 'amb_cos': True, carrega el feature extractor preentrenat
+    i embolcalla l'entorn per reduir les dimensions de 233 a 128.
     """
     from rlcard.agents import DQNAgent
 
+    # Comprovar si s'ha d'usar feature extractor preentrenat
+    if spec.get("amb_cos", False):
+        return _crear_dqn_amb_cos(spec, env_config)
+    
     return _crear_rlcard_model(
         spec,
         env_config,
@@ -113,3 +120,46 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         ),
         carregar_pesos=lambda ag, ck: ag.q_estimator.qnet.load_state_dict(ck),
     )
+
+
+def _crear_dqn_amb_cos(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
+    """
+    Crea un model DQN que utilitza un feature extractor preentrenat (COS).
+    
+    El COS redueix les dimensions de 233 a 128, permetent carregar models
+    que van ser entrenats amb aquesta arquitectura.
+    """
+    import torch
+    from rlcard.agents import DQNAgent
+    from models.adapters.feature_extractor import wrap_env_amb_cos, carregar_model_cos
+
+    ruta = spec["ruta"]
+    if not os.path.exists(ruta):
+        raise FileNotFoundError(f"No s'ha trobat el model DQN a: {ruta}")
+
+    hidden_layers = spec.get("hidden_layers", _DEFAULT_HIDDEN_LAYERS)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Crear entorn temporal
+    env_temp = _crear_env_temp(env_config)
+    
+    # Carregar el COS preentrenat
+    cos_model = carregar_model_cos(device)
+    
+    # Embolcallar l'entorn amb el COS
+    env_wrapped = wrap_env_amb_cos(env_temp, cos_model, device)
+    
+    # Crear agent DQN amb les dimensions correctes (128)
+    agent = DQNAgent(
+        num_actions=env_wrapped.num_actions,
+        state_shape=env_wrapped.state_shape[0],
+        mlp_layers=hidden_layers,
+        device=device,
+    )
+    
+    # Carregar els pesos del model entrenat
+    checkpoint = torch.load(ruta, map_location=device, weights_only=True)
+    agent.q_estimator.qnet.load_state_dict(checkpoint)
+    print(f"Model DQN amb COS carregat des de: {ruta}")
+    
+    return _RLCardModelAdapter(agent, env_wrapped._extract_state)

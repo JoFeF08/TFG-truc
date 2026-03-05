@@ -78,6 +78,9 @@ def crear_agent_nfsp(env, device):
     )
 
 
+from models.adapters.feature_extractor import wrap_env_amb_cos, carregar_model_cos
+
+
 def main():
     set_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -91,8 +94,15 @@ def main():
         'seed': SEED,
         'verbose': VERBOSE_TRAINING
     }
-    env      = TrucEnv(config=env_config)
-    eval_env = TrucEnv(config=env_config)
+    raw_env      = TrucEnv(config=env_config)
+    raw_eval_env = TrucEnv(config=env_config)
+
+    # Carreguem el COS actuant com a Feature Extractor
+    cos_model = carregar_model_cos(device)
+    
+    # Embolillem els entorns perquè els agents rebin l'array de 128
+    env = wrap_env_amb_cos(raw_env, cos_model, device)
+    eval_env = wrap_env_amb_cos(raw_eval_env, cos_model, device)
 
     # Dos agents NFSP (self-play)
     agent_0 = crear_agent_nfsp(env, device)
