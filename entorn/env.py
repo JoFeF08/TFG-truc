@@ -93,7 +93,11 @@ class TrucEnv(Env):
             pid = (player_id + offset) % n
             canal_per_jugador[pid] = canal
 
-        for pid, ronda, carta in state['hist_cartes']:
+        for entrada in state['hist_cartes']:
+            if len(entrada) == 3:
+                pid, ronda, carta = entrada
+            else:
+                pid, carta = entrada
             canal = canal_per_jugador.get(pid)
             if canal is not None:
                 _marca_carta(canal, carta)
