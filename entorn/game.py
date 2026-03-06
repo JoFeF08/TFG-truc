@@ -80,7 +80,6 @@ class TrucGame:
         
 
         self.round_counter = 0
-        self.cartes_ronda = [] 
         self.ronda_winners = [] # -1 per empat
         
         return self._get_return_state()
@@ -167,7 +166,7 @@ class TrucGame:
         
         # --- LÒGICA DE TORN NORMAL ---
         if action_str.startswith('senya_'):
-            self.hist_senyes.append((self.current_player, action_str))
+            self.hist_senyes.append((self.current_player, self.round_counter, action_str))
             self.turn_phase = 1 # canviar de fase
             return self._get_return_state()
             
@@ -244,12 +243,12 @@ class TrucGame:
         elif action_str.startswith('play_card'):
             idx = int(action_str[-1])
             card_played = player.hand.pop(idx)
-            self.cartes_ronda.append((self.current_player, card_played))
-            self.hist_cartes.append((self.current_player, card_played))
+            self.hist_cartes.append((self.current_player, self.round_counter, card_played))
             
             # Comprovar fi de ronda
-            if len(self.cartes_ronda) == self.num_jugadors:
-                winner = self.judger.guanyador_ronda(self.cartes_ronda)
+            cartes_ronda_actual = [(p, c) for (p, r, c) in self.hist_cartes if r == self.round_counter]
+            if len(cartes_ronda_actual) == self.num_jugadors:
+                winner = self.judger.guanyador_ronda(cartes_ronda_actual)
                 if winner is not None:
                     self.turn_player = winner
                     self.ronda_winners.append(winner)
@@ -260,7 +259,6 @@ class TrucGame:
                     self.ronda_winners.append(-1)  # -1 indica empat
                     self.debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. EMPAT")
 
-                self.cartes_ronda = []
                 self.round_counter += 1
 
                 # Comprovar fi de mà just després de tancar una ronda (majoria o 3 rondes)
@@ -326,11 +324,11 @@ class TrucGame:
         state['ma_jugador'] = [c for c in player.hand]
         state['accions_legals'] = self.get_legal_actions()
 
-        # --- HISTORIAL ---
-        state['hist_cartes'] = self.hist_cartes
-        state['hist_senyes'] = self.hist_senyes
+        # --- HISTORIAL FILTRAT PER VISIBILITAT ---
+        state['hist_cartes'] = list(self.hist_cartes)
+        state['hist_senyes'] = list(self.hist_senyes)
 
-        return state
+        return state 
 
     def get_legal_actions(self):
         actions = []
@@ -441,7 +439,6 @@ class TrucGame:
         self.envit_is_falta = False
         
         self.round_counter = 0
-        self.cartes_ronda = []
         self.ronda_winners = []
         self.hist_cartes = []
         self.hist_senyes = []

@@ -93,7 +93,7 @@ class TrucEnv(Env):
             pid = (player_id + offset) % n
             canal_per_jugador[pid] = canal
 
-        for pid, carta in state['hist_cartes']:
+        for pid, ronda, carta in state['hist_cartes']:
             canal = canal_per_jugador.get(pid)
             if canal is not None:
                 _marca_carta(canal, carta)
@@ -111,7 +111,7 @@ class TrucEnv(Env):
             'senya_as_bord':        None,
             'senya_cegas':          None,
         }
-        for pid, senya in state.get('hist_senyes', []):
+        for pid, ronda, senya in state.get('hist_senyes', []):
             if pid == company_pid:
                 carta_senya = SENYA_CARTA_MAP.get(senya)
                 if carta_senya:
