@@ -66,6 +66,7 @@ referencies/temp
 dades_partides/
 entrenament/entrenamentRLCard/registres/
 entrenament/entrenamentEstatTruc/registres/
+entrenament/entrenamentsUnificats/registres/
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
