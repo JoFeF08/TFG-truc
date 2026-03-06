@@ -47,12 +47,12 @@ DQN_UPDATE_TGT  = 500
 DQN_EPS_MIN     = 0.05
 
 # NFSP
-NFSP_RL_LR      = 1e-3
-NFSP_SL_LR      = 1e-3
+NFSP_RL_LR      = 5e-4
+NFSP_SL_LR      = 5e-4
 NFSP_BATCH      = 256
 NFSP_RESERVOIR  = 100_000
 NFSP_Q_REPLAY   = 100_000
-NFSP_Q_UPDATE   = 300
+NFSP_Q_UPDATE   = 500
 NFSP_ETA        = 0.3
 
 FINETUNE_LR_COS = 1e-5
@@ -205,7 +205,7 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
     # Agent principal configuració
     agent = init_dqn(env, device, mode)
-    agent.epsilon_decay_steps = episodes * 50
+    agent.epsilon_decay_steps = episodes * 10
     agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, agent.epsilon_decay_steps)
 
     # Oponent congelat
