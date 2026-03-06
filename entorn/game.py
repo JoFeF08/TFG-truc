@@ -80,8 +80,8 @@ class TrucGame:
         
 
         self.round_counter = 0
+        self.cartes_ronda = [] 
         self.ronda_winners = [] # -1 per empat
-        self.envit_score_pending = [0, 0] # Punts d'envit retinguts fins fi de mà
         
         return self._get_return_state()
 
@@ -105,9 +105,19 @@ class TrucGame:
                     
                     all_hands = [p.initial_hand for p in self.players]
                     
+                    # Calcular punts d'Envit de cada jugador per mostrar-los
+                    punts_envit = []
+                    for hand in all_hands:
+                        punts = self.judger.get_envit_ma(hand)
+                        punts_envit.append(punts)
+                    
                     winner_team = self.judger.guanyador_envits(all_hands, self.ma)
-                    self.debug_print(f"=====>DEBUG: Envit acceptat. Guanyador: Equip {winner_team}. Punts: {self.envit_level} (retinguts)")
-                    self.envit_score_pending[winner_team] = self.envit_level
+                    self.debug_print(f"=====>DEBUG: Envit acceptat. Punts: J0={punts_envit[0]}, J1={punts_envit[1]}. Guanyador: Equip {winner_team}. Punts guanyats: {self.envit_level}. Score abans: {self.score}")
+                    self.score[winner_team] += self.envit_level
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
+                    
+                    if self.score[winner_team] >= self.puntuacio_final:
+                        return self.get_state(self.current_player), self.current_player
                     
                     # Retornar el torn
                     self.current_player = self.turn_player
@@ -116,8 +126,10 @@ class TrucGame:
                 elif action_str == 'fora_envit':
                     points_won = self.previous_envit_level
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
-                    self.debug_print(f"=====>DEBUG: Envit rebutjat. Guanyador: Equip {winner_team}. Punts: {points_won} (retinguts)")
-                    self.envit_score_pending[winner_team] = points_won
+                    self.score[winner_team] += points_won
+                    
+                    if self.score[winner_team] >= self.puntuacio_final:
+                        return self.get_state(self.current_player), self.current_player
 
                     self.envit_accepted = False 
                     self.envit_owner = -1 
@@ -142,16 +154,11 @@ class TrucGame:
                 elif action_str == 'fora_truc':
                     self.response_state = ResponseState.NO_PENDING
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
+                    self.debug_print(f"=====>DEBUG: Jugador {self.current_player} diu 'Fora' al Truc. Jugador {winner_team} guanya {self.previous_truc_level} punts. Score abans: {self.score}")
+                    self.score[winner_team] += self.previous_truc_level
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
                     
-                    # 1. Punts d'envit
-                    for i in range(2):
-                        self.score[i] += self.envit_score_pending[i]
-                    
-                    # 2. Truc
-                    if self.score[0] < self.puntuacio_final and self.score[1] < self.puntuacio_final:
-                        self.score[winner_team] += self.previous_truc_level
-                    
-                    if self.score[0] >= self.puntuacio_final or self.score[1] >= self.puntuacio_final:
+                    if self.score[winner_team] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
                     
                     self._reset_hand_state()
@@ -160,7 +167,7 @@ class TrucGame:
         
         # --- LÒGICA DE TORN NORMAL ---
         if action_str.startswith('senya_'):
-            self.hist_senyes.append((self.current_player, self.round_counter, action_str))
+            self.hist_senyes.append((self.current_player, action_str))
             self.turn_phase = 1 # canviar de fase
             return self._get_return_state()
             
@@ -224,16 +231,9 @@ class TrucGame:
         elif action_str == 'fora_truc':
              # Retirar-se voluntàriament
              winner = (self.current_player + 1) % 2
+             self.score[winner] += self.truc_level
              
-             # 1. Envit primer
-             for i in range(2):
-                 self.score[i] += self.envit_score_pending[i]
-             
-             # 2. Truc segon
-             if self.score[0] < self.puntuacio_final and self.score[1] < self.puntuacio_final:
-                 self.score[winner] += self.truc_level
-             
-             if self.score[0] >= self.puntuacio_final or self.score[1] >= self.puntuacio_final:
+             if self.score[winner] >= self.puntuacio_final:
                  return self.get_state(self.current_player), None
             
              self._reset_hand_state()
@@ -244,12 +244,12 @@ class TrucGame:
         elif action_str.startswith('play_card'):
             idx = int(action_str[-1])
             card_played = player.hand.pop(idx)
-            self.hist_cartes.append((self.current_player, self.round_counter, card_played))
+            self.cartes_ronda.append((self.current_player, card_played))
+            self.hist_cartes.append((self.current_player, card_played))
             
             # Comprovar fi de ronda
-            cartes_ronda_actual = [(p, c) for (p, r, c) in self.hist_cartes if r == self.round_counter]
-            if len(cartes_ronda_actual) == self.num_jugadors:
-                winner = self.judger.guanyador_ronda(cartes_ronda_actual)
+            if len(self.cartes_ronda) == self.num_jugadors:
+                winner = self.judger.guanyador_ronda(self.cartes_ronda)
                 if winner is not None:
                     self.turn_player = winner
                     self.ronda_winners.append(winner)
@@ -260,20 +260,17 @@ class TrucGame:
                     self.ronda_winners.append(-1)  # -1 indica empat
                     self.debug_print(f"=====>DEBUG: Ronda {self.round_counter + 1} acabada. EMPAT")
 
+                self.cartes_ronda = []
                 self.round_counter += 1
 
                 # Comprovar fi de mà just després de tancar una ronda (majoria o 3 rondes)
                 winner_ma = self.judger.guanyador_ma(self.ronda_winners, self.ma)
                 if winner_ma != -1:
-                    # 1. Punts d'envit
-                    for i in range(2):
-                        self.score[i] += self.envit_score_pending[i]
-                    
-                    # 2. Punts de truc
-                    if self.score[0] < self.puntuacio_final and self.score[1] < self.puntuacio_final:
-                        self.score[winner_ma] += self.truc_level
+                    self.debug_print(f"=====>DEBUG: Mà acabada. Guanyador equip: {winner_ma}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
+                    self.score[winner_ma] += self.truc_level
+                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
-                    if self.score[0] >= self.puntuacio_final or self.score[1] >= self.puntuacio_final:
+                    if self.score[winner_ma] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
 
                     self._reset_hand_state()
@@ -322,8 +319,7 @@ class TrucGame:
             'level': self.envit_level,
             'owner': self.envit_owner,
             'active': (self.envit_level > 0),
-            'accepted': self.envit_accepted,
-            'pending_score': list(self.envit_score_pending)
+            'accepted': self.envit_accepted
         }
 
         # --- INFORMACIÓ DEL JUGADOR ---
@@ -331,12 +327,22 @@ class TrucGame:
         state['accions_legals'] = self.get_legal_actions()
 
         # --- HISTORIAL FILTRAT PER VISIBILITAT ---
-        state['hist_cartes'] = list(self.hist_cartes)
-        state['hist_senyes'] = list(self.hist_senyes)
-        state['hist_cartes_ant'] = getattr(self, 'last_hist_cartes', [])
-        state['hist_senyes_ant'] = getattr(self, 'last_hist_senyes', [])
+        # Cartes visibles: cartes pròpies (totes) + cartes jugades dels rivals (totes)
+        cartes_visibles = []
+        
+        # Afegir TOTES les cartes del historial (pròpies i rivals)
+        for pid, carta in self.hist_cartes:
+            cartes_visibles.append((pid, carta))
+        
+        # Afegir cartes de la ronda actual
+        for pid, carta in self.cartes_ronda:
+            cartes_visibles.append((pid, carta))
+        
+        state['hist_cartes'] = cartes_visibles
+        state['cartes_taula_actual'] = list(self.cartes_ronda)
+        state['hist_senyes'] = self.hist_senyes
 
-        return state 
+        return state
 
     def get_legal_actions(self):
         actions = []
@@ -424,10 +430,6 @@ class TrucGame:
         return payoffs
 
     def _reset_hand_state(self):
-        """Reinicia l'estat per a una nova mà mantenint el marcador global."""
-        self.last_hist_cartes = list(self.hist_cartes)
-        self.last_hist_senyes = list(self.hist_senyes)
-        
         # Avançar mà
         self.ma = (self.ma + 1) % self.num_jugadors
         self.current_player = self.ma
@@ -451,8 +453,8 @@ class TrucGame:
         self.envit_is_falta = False
         
         self.round_counter = 0
+        self.cartes_ronda = []
         self.ronda_winners = []
-        self.envit_score_pending = [0, 0]
         self.hist_cartes = []
         self.hist_senyes = []
         
