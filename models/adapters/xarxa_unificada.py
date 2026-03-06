@@ -9,21 +9,9 @@ LATENT_DIM = 128
 OBS_CARTES_SHAPE = (6, 4, 9)
 OBS_CONTEXT_SIZE = 17
 
-def get_cos_weights():
-    """Cerca darrers pesos entrenats del COS"""
-    root = Path(__file__).resolve().parent.parent.parent
-    reg_dir = root / "entrenament" / "entrenamentEstatTruc" / "registres"
-    
-    if not reg_dir.exists():
-        return None
-
-    # Ordenem per data
-    folders = sorted(reg_dir.iterdir(), key=os.path.getmtime, reverse=True)
-    for folder in folders:
-        path = folder / "models" / "best_pesos_cos_truc.pth"
-        if path.exists(): return str(path)
-    
-    return None
+COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent / 
+                       "entrenament" / "entrenamentEstatTruc" / "registres" / 
+                       "05_03_26_a_les_0015" / "models" / "best_pesos_cos_truc.pth")
 
 def construir_mlp(in_dim, layers, out_dim, final="none"):
     """Construeix un MLP clàssic (tanh) per a RLCard"""
@@ -55,7 +43,7 @@ class XarxaUnificada(nn.Module):
 
         # Carregar pesos si no estem en mode 'scratch'
         if mode in ("frozen", "finetune"):
-            w = weights or get_cos_weights()
+            w = weights or COS_WEIGHTS_PATH
             
             if w and os.path.exists(w):
                 self.cos.load_state_dict(torch.load(w, map_location=self.device, weights_only=True))

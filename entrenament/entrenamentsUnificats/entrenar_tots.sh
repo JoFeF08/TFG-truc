@@ -4,6 +4,7 @@
 EPISODIS=100000
 PYTHON_EXEC="python3"
 SCRIPT_NAME="entrenaments_unificats.py"
+EVAL_MODEL="$BASE_DIR/../entrenamentRLCard/registres/05_03_26_a_les_0054/models/dqn_truc.pt"
 
 # Obtenir la ruta absoluta del directori on es troba aquest script
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -30,7 +31,8 @@ for AGENT in "${AGENTS[@]}"; do
         $PYTHON_EXEC "$BASE_DIR/$SCRIPT_NAME" \
             --agent "$AGENT" \
             --mode "$MODE" \
-            --episodes $EPISODIS
+            --episodes $EPISODIS \
+            --eval_model "$EVAL_MODEL"
         
 
         echo "Esperant 30 segons abans del següent..."
