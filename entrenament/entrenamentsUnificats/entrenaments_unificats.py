@@ -42,9 +42,10 @@ MLP_LAYERS = [256, 256]
 # DQN
 DQN_LR          = 5e-4
 DQN_BATCH       = 256
-DQN_MEMORY      = 100_000
-DQN_UPDATE_TGT  = 500
-DQN_EPS_MIN     = 0.05
+DQN_MEMORY      = 200_000
+DQN_UPDATE_TGT  = 1000
+DQN_EPS_MIN     = 0.1
+OPP_UPDATE_TAU  = 0.05  # Factor per a l'actualització suau de l'oponent
 
 # NFSP
 NFSP_RL_LR      = 5e-4
@@ -216,11 +217,15 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     env.set_agents([agent, opp])
     
     # Configuració de l'avaluació
-    if eval_model_path:
-        eval_opp_base = init_dqn(env, device, mode="frozen")
-        carregar_pesos(eval_opp_base, eval_model_path, device)
-        eval_agent = AgentCongelat(eval_opp_base)
-        print(f"Avaluació contra model: {eval_model_path}")
+    if eval_model_path and os.path.exists(eval_model_path):
+        try:
+            eval_opp_base = init_dqn(env, device, mode="frozen")
+            carregar_pesos(eval_opp_base, eval_model_path, device)
+            eval_agent = AgentCongelat(eval_opp_base)
+            print(f"Avaluació contra model: {eval_model_path}")
+        except Exception as e:
+            print(f"Error carregant model d'avaluació: {e}. Usant RandomAgent per defecte.")
+            eval_agent = RandomAgent(env.num_actions)
     else:
         eval_agent = RandomAgent(env.num_actions)
         print("Avaluació contra RandomAgent")
@@ -261,9 +266,14 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
             if r > best_r:
                 best_r = r
                 torch.save(agent.q_estimator.qnet.state_dict(), model_dir / f"best.pt")
-                opp_base.q_estimator.qnet.load_state_dict(agent.q_estimator.qnet.state_dict())
                 indicador = " *"
             else: indicador = ""
+
+            # Actualització suau de l'oponent (Polyak Averaging / Soft Update)
+            # En lloc de canviar-lo de cop, barregem els pesos nous amb els vells
+            with torch.no_grad():
+                for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_base.q_estimator.qnet.parameters()):
+                    target_param.data.copy_(OPP_UPDATE_TAU * param.data + (1.0 - OPP_UPDATE_TAU) * target_param.data)
 
             tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | LR {lr:.2e}{indicador}")
             with open(log_file, "a", newline="") as f:
@@ -291,11 +301,15 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     env.set_agents([p0, p1])
     
     # Configuració de l'avaluació
-    if eval_model_path:
-        eval_opp_base = init_dqn(env, device, mode="frozen")
-        carregar_pesos(eval_opp_base, eval_model_path, device)
-        eval_agent = AgentCongelat(eval_opp_base)
-        print(f"Avaluació contra model: {eval_model_path}")
+    if eval_model_path and os.path.exists(eval_model_path):
+        try:
+            eval_opp_base = init_dqn(env, device, mode="frozen")
+            carregar_pesos(eval_opp_base, eval_model_path, device)
+            eval_agent = AgentCongelat(eval_opp_base)
+            print(f"Avaluació contra model: {eval_model_path}")
+        except Exception as e:
+            print(f"Error carregant model d'avaluació: {e}. Usant RandomAgent per defecte.")
+            eval_agent = RandomAgent(env.num_actions)
     else:
         eval_agent = RandomAgent(env.num_actions)
         print("Avaluació contra RandomAgent")
