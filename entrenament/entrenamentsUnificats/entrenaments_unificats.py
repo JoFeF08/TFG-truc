@@ -21,7 +21,7 @@ from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
 from rlcard.utils import set_seed, reorganize
 
 from entorn import TrucEnv
-from models.adapters.xarxa_unificada import XarxaUnificada
+from models.xarxa_unificada import XarxaUnificada
 
 # Silenciar loggers de RLCard
 logging.basicConfig(level=logging.ERROR, force=True)

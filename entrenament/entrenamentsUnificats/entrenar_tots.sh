@@ -15,8 +15,8 @@ echo "Configuració: $EPISODIS episodis per variant."
 echo ""
 
 # Llista d'agents i modes per iterar
-AGENTS=("dqn" "nfsp")
-MODES=("scratch" "frozen" "finetune")
+AGENTS=("nfsp" "dqn")
+MODES=("frozen" "finetune" "scratch")
 
 # Bucle principal
 for AGENT in "${AGENTS[@]}"; do
