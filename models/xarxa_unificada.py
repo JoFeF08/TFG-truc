@@ -40,6 +40,9 @@ class XarxaUnificada(nn.Module):
 
         # Cos
         self.cos = CosMultiInput()
+        
+        # Pre-calcular el tall del vector d'entrada
+        self.split = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2]
 
         # Carregar pesos si no estem en mode 'scratch'
         if mode in ("frozen", "finetune"):
@@ -72,10 +75,16 @@ class XarxaUnificada(nn.Module):
         self.to(self.device)
 
     def forward(self, obs):
+        # Assegurar que obs és un tensor a la GPU
+        if not isinstance(obs, torch.Tensor):
+            obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        elif obs.device != self.device:
+            obs = obs.to(self.device)
+
         # Convertir l'array a format cartes + context
-        split = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2]
-        cartes_f = obs[:, :split]
-        context = obs[:, split:]
+        # obs sol ser [Batch, Flat_Dim]
+        cartes_f = obs[:, :self.split]
+        context = obs[:, self.split:]
         
         cartes = cartes_f.view(-1, *OBS_CARTES_SHAPE)
 

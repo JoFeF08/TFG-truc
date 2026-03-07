@@ -462,7 +462,19 @@ def main():
     args = parser.parse_args()
 
     set_seed(SEED)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Configuració GPU i rendiment PyTorch
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        gpu_name = torch.cuda.get_device_name(0)
+        
+        print(f"[ACCELERACIÓ] Usant GPU: {gpu_name}")
+        
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    else:
+        device = torch.device("cpu")
+        print("[AVÍS] GPU no disponible, usant CPU.")
     
     tag = f"{args.agent}_{args.mode}_{datetime.now().strftime('%d%m_%H%M')}"
     run_dir = Path(__file__).parent / "registres" / tag
