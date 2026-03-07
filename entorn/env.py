@@ -174,7 +174,7 @@ class TrucEnv(Env):
 
         for pid in range(self.num_jugadors):
             oponent = 1 - pid
-            diff = (score[pid] - score[oponent]) / objectiu
+            diff = np.clip((score[pid] - score[oponent]) / objectiu, -1.0, 1.0)
             payoffs.append(diff)
 
         return payoffs

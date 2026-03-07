@@ -12,6 +12,7 @@ from copy import deepcopy
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+import random
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -40,7 +41,7 @@ ENV_CONFIG = {
 MLP_LAYERS = [256, 256]
 
 # DQN
-DQN_LR          = 5e-4
+DQN_LR          = 2e-4
 DQN_BATCH       = 256
 DQN_MEMORY      = 200_000
 DQN_UPDATE_TGT  = 1000
@@ -206,15 +207,22 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
     # Agent principal configuració
     agent = init_dqn(env, device, mode)
-    agent.epsilon_decay_steps = episodes * 10
+    agent.epsilon_decay_steps = episodes
     agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, agent.epsilon_decay_steps)
 
-    # Oponent congelat
-    opp_base = init_dqn(env, device, mode)
-    opp_base.q_estimator.qnet.load_state_dict(agent.q_estimator.qnet.state_dict())
-    opp = AgentCongelat(opp_base)
+    # Oponent Polyak
+    opp_polyak_base = init_dqn(env, device, mode)
+    opp_polyak_base.q_estimator.qnet.load_state_dict(agent.q_estimator.qnet.state_dict())
+    
+    # Oponent Pool
+    opp_pool_base = init_dqn(env, device, mode)
+    
+    # comença amb l'estat inicial
+    init_path = model_dir / "init.pt"
+    torch.save(agent.q_estimator.qnet.state_dict(), init_path)
+    model_pool = [init_path]
 
-    env.set_agents([agent, opp])
+    env.set_agents([agent, AgentCongelat(opp_polyak_base)])
     
     # Configuració de l'avaluació
     if eval_model_path and os.path.exists(eval_model_path):
@@ -244,7 +252,25 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     best_r = -999
     
     # Bucle d'entrenament
+    random_opponent = RandomAgent(env.num_actions)
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
+        
+        #Reward Scheduling
+        current_beta = 0.5 + (0.5 * (ep / episodes))
+        env.set_reward_beta(current_beta)
+
+        #Selecció d'oponent
+        chance = random.random()
+        if chance < 0.20:
+            env.set_agents([agent, random_opponent]) # 20% contra Random
+        elif chance < 0.60:
+            env.set_agents([agent, AgentCongelat(opp_polyak_base)]) # 40% contra Polyak (Latest)
+        else:
+            # 40% contra una versió random del pool
+            past_path = random.choice(model_pool)
+            opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device))
+            env.set_agents([agent, AgentCongelat(opp_pool_base)])
+
         traj, payoffs = env.run(is_training=True)
         traj = reorganize(traj, payoffs)
         
@@ -269,10 +295,9 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
                 indicador = " *"
             else: indicador = ""
 
-            # Actualització suau de l'oponent (Polyak Averaging / Soft Update)
-            # En lloc de canviar-lo de cop, barregem els pesos nous amb els vells
+            # Actualització suau de l'oponent Polyak
             with torch.no_grad():
-                for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_base.q_estimator.qnet.parameters()):
+                for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_polyak_base.q_estimator.qnet.parameters()):
                     target_param.data.copy_(OPP_UPDATE_TAU * param.data + (1.0 - OPP_UPDATE_TAU) * target_param.data)
 
             tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | LR {lr:.2e}{indicador}")
@@ -281,7 +306,9 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
         # Guardar checkpoints
         if ep % save_every == 0:
-            torch.save(agent.q_estimator.qnet.state_dict(), model_dir / f"ep{ep}.pt")
+            path = model_dir / f"ep{ep}.pt"
+            torch.save(agent.q_estimator.qnet.state_dict(), path)
+            model_pool.append(path)
 
     # Guardar final
     final = model_dir / "final.pt"
@@ -291,8 +318,8 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
 def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     
-    env = TrucEnv(ENV_CONFIG)
-    eval_env = TrucEnv(ENV_CONFIG)
+    env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
+    eval_env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
 
     # Agents per al self-play
     p0 = init_nfsp(env, device, mode)
@@ -388,7 +415,7 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     carregar_pesos(b0, p0_path, device)
     carregar_pesos(b1, p1_path, device)
 
-    play_env = TrucEnv(ENV_CONFIG)
+    play_env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
     wins = [0, 0]
     for _ in range(1000):
         play_env.set_agents([b0, b1] if _ % 2 == 0 else [b1, b0])

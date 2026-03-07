@@ -14,12 +14,12 @@ COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent /
                        "05_03_26_a_les_0015" / "models" / "best_pesos_cos_truc.pth")
 
 def construir_mlp(in_dim, layers, out_dim, final="none"):
-    """Construeix un MLP clàssic (tanh) per a RLCard"""
+    """Construeix un MLP clàssic (ReLU) per a RLCard"""
     dims = [in_dim] + layers
     net = []
     for i in range(len(dims) - 1):
         net.append(nn.Linear(dims[i], dims[i + 1]))
-        net.append(nn.Tanh())
+        net.append(nn.ReLU())
     
     net.append(nn.Linear(dims[-1], out_dim))
     if final == "logsoftmax":
