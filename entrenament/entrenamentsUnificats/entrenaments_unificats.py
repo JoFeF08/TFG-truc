@@ -106,12 +106,12 @@ def carregar_pesos(agent, path, device):
         q_sd = sd['q'] if 'q' in sd else sd
         sl_sd = sd['sl'] if 'sl' in sd else sd
         
-        agent._rl_agent.q_estimator.qnet.mlp.load_state_dict(q_sd)
-        agent.policy_network.mlp.load_state_dict(sl_sd)
+        agent._rl_agent.q_estimator.qnet.load_state_dict(q_sd)
+        agent.policy_network.load_state_dict(sl_sd)
     else:
         # Per a DQN sol ser el state_dict de l'MLP directament
         q_sd = sd['q_net'] if (isinstance(sd, dict) and 'q_net' in sd) else sd
-        agent.q_estimator.qnet.mlp.load_state_dict(q_sd)
+        agent.q_estimator.qnet.load_state_dict(q_sd)
     print(f"Pesos de l'MLP carregats correctament des de {os.path.basename(path)}")
 
 
@@ -246,7 +246,7 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     # Preparar fitxer de logs
     log_file = log_dir / f"dqn_{mode}.csv"
     with open(log_file, "w", newline="") as f:
-        csv.writer(f).writerow(["ep", "reward", "vic%", "best", "lr"])
+        csv.writer(f).writerow(["ep", "reward", "vic%", "best", "is_best", "lr"])
 
     print(f"\nIniciant DQN ({mode.upper()}) | {episodes} eps")
     best_r = -999
@@ -255,10 +255,6 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     random_opponent = RandomAgent(env.num_actions)
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
         
-        #Reward Scheduling
-        current_beta = 0.5 + (0.5 * (ep / episodes))
-        env.set_reward_beta(current_beta)
-
         #Selecció d'oponent
         chance = random.random()
         if chance < 0.20:
@@ -268,8 +264,13 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
         else:
             # 40% contra una versió random del pool
             past_path = random.choice(model_pool)
-            opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device))
+            opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device, weights_only=True))
             env.set_agents([agent, AgentCongelat(opp_pool_base)])
+
+        # Reward Scheduling
+        progress = ep / episodes
+        current_beta = 0.5 + (0.5 * progress)
+        env.set_reward_beta(current_beta)
 
         traj, payoffs = env.run(is_training=True)
         traj = reorganize(traj, payoffs)
@@ -293,7 +294,10 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
                 best_r = r
                 torch.save(agent.q_estimator.qnet.state_dict(), model_dir / f"best.pt")
                 indicador = " *"
-            else: indicador = ""
+                is_best = 1
+            else:
+                indicador = ""
+                is_best = 0
 
             # Actualització suau de l'oponent Polyak
             with torch.no_grad():
@@ -302,7 +306,7 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
             tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | LR {lr:.2e}{indicador}")
             with open(log_file, "a", newline="") as f:
-                csv.writer(f).writerow([ep, r, vic, best_r, lr])
+                csv.writer(f).writerow([ep, r, vic, best_r, is_best, lr])
 
         # Guardar checkpoints
         if ep % save_every == 0:
@@ -314,6 +318,12 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     final = model_dir / "final.pt"
     if (model_dir / "best.pt").exists(): shutil.copy2(model_dir / "best.pt", final)
     else: torch.save(agent.q_estimator.qnet.state_dict(), final)
+
+    # Netejar pesos intermedis
+    for p in model_dir.glob("*.pt"):
+        if p.name not in ["final.pt", "best.pt"]:
+            p.unlink()
+    print(f"Pesos intermedis esborrats. Només queden 'final.pt' i 'best.pt'.")
 
 
 def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
@@ -349,13 +359,18 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     # Inicialitzar CSV
     log_file = log_dir / f"nfsp_{mode}.csv"
     with open(log_file, "w", newline="") as f:
-        csv.writer(f).writerow(["ep", "r0", "vic0", "m0", "m1", "best"])
+        csv.writer(f).writerow(["ep", "r0", "vic0", "m0", "m1", "best", "is_best"])
 
     print(f"\nIniciant NFSP ({mode.upper()}) | {episodes} eps")
     best_r = -999
 
     # Bucle d'entrenament
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
+        # Reward Scheduling
+        progress = ep / episodes
+        current_beta = 0.5 + (0.5 * progress)
+        env.set_reward_beta(current_beta)
+
         traj, payoffs = env.run(is_training=True)
         traj = reorganize(traj, payoffs)
 
@@ -384,11 +399,14 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
                     torch.save({'q': ag._rl_agent.q_estimator.qnet.state_dict(), 
                                 'sl': ag.policy_network.state_dict()}, model_dir / f"best_p{i}.pt")
                 indicador = "*"
-            else: indicador = ""
+                is_best = 1
+            else:
+                indicador = ""
+                is_best = 0
 
             tqdm.write(f"EP {ep} | R0 {r:.3f} | V0 {vic}% | MODES {m0}-{m1}{indicador}")
             with open(log_file, "a", newline="") as f:
-                csv.writer(f).writerow([ep, r, vic, m0, m1, best_r])
+                csv.writer(f).writerow([ep, r, vic, m0, m1, best_r, is_best])
 
         # Guardar checkpoints
         if ep % save_every == 0:
@@ -426,6 +444,12 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     winner = 0 if wins[0] >= wins[1] else 1
     print(f"Guanyador: P{winner} ({wins[0]}-{wins[1]})")
     shutil.copy2(model_dir / f"best_p{winner}.pt", model_dir / "final.pt")
+
+    # Netejar pesos intermedis
+    for p in model_dir.glob("*.pt"):
+        if p.name not in ["final.pt", "best_p0.pt", "best_p1.pt"]:
+            p.unlink()
+    print(f"Pesos intermedis esborrats. Només queden 'final.pt' i els millors de cada agent.")
 
 
 

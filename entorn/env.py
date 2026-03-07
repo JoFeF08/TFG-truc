@@ -40,6 +40,8 @@ class TrucEnv(Env):
         config.setdefault('seed', None)
         super().__init__(config)
         
+        self.reward_beta = 0.5  # Valor inicial per defecte
+        
         self.cartes = init_joc_cartes()
         self.carta_map = {carta: i for i, carta in enumerate(self.cartes)}
         self.signal_map = {signal: i for i, signal in enumerate(ACTIONS_SIGNAL)}
@@ -167,15 +169,25 @@ class TrucEnv(Env):
         }
         return extracted_state
 
+    def set_reward_beta(self, beta):
+        self.reward_beta = beta
+
     def get_payoffs(self):
         score    = self.game.score
         objectiu = self.game.puntuacio_final
         payoffs  = []
 
+        # Formula: R = sign(delta) * (beta + (1 - beta) * sqrt(|delta|/T))
         for pid in range(self.num_jugadors):
             oponent = 1 - pid
-            diff = np.clip((score[pid] - score[oponent]) / objectiu, -1.0, 1.0)
-            payoffs.append(diff)
+            delta = score[pid] - score[oponent]
+            
+            if delta == 0:
+                payoffs.append(0.0)
+            else:
+                sign = 1.0 if delta > 0 else -1.0
+                val = self.reward_beta + (1.0 - self.reward_beta) * np.sqrt(abs(delta) / objectiu)
+                payoffs.append(sign * val)
 
         return payoffs
 
