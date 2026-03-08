@@ -59,7 +59,7 @@ NFSP_ETA        = 0.3
 
 FINETUNE_LR_COS = 1e-5
 LR_DECAY_FACTOR = 0.5
-EVALUATE_NUM = 500
+EVALUATE_NUM = 1000
 
 class AgentCongelat:
     """Wrapper per usar eval_step"""
@@ -284,7 +284,7 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
             print(f"\nLR Decay: {agent.q_estimator.optimizer.param_groups[-1]['lr']:.2e}")
 
         # Avaluació
-        eval_freq = max(episodes // 100, 500)
+        eval_freq = max(episodes // 200, 250)
         if ep % eval_freq == 0:
             r = avaluar(eval_env, EVALUATE_NUM)
             vic = round(100 * (r + 1) / 2, 1)
@@ -386,7 +386,7 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
             print(f"\nLR Decay")
 
         # Avaluació
-        eval_freq = max(episodes // 100, 500)
+        eval_freq = max(episodes // 200, 250)
         if ep % eval_freq == 0:
             p0.sample_episode_policy(); p1.sample_episode_policy()
             r = avaluar(eval_env, EVALUATE_NUM)
