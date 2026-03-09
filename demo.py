@@ -1,7 +1,7 @@
 from controlador import Controlador, ModelInteractiu
 from vista.vista_desktop.vista_desktop import VistaDesktop
 
-MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\entrenamentRLCard\registres\05_03_26_a_les_0054\models\dqn_truc.pt"
+MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\entrenamentsUnificats\registres\resultats_comparativa\dqn_finetune_0803_0024\models\best.pt"
 
 config = {
     "num_jugadors": 2,
