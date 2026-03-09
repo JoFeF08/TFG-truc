@@ -1,0 +1,592 @@
+\documentclass[a4paper,11pt]{report}
+\usepackage[catalan]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{pmboxdraw}
+
+\geometry{margin=2.5cm}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Python,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3,
+  inputencoding=utf8
+}
+
+\title{Resum Entorn i Documentació del Projecte}
+\author{Josep Ferriol Font}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\chapter{Resum de l'Estructura del Projecte}
+
+El projecte \textbf{TFG-truc} implementa el joc de cartes Truc amb una arquitectura modular preparada per a l'entrenament d'agents de Reinforcement Learning (RL) utilitzant la llibreria RLCard.
+
+\section*{Visió General}
+L'objectiu principal és proporcionar un entorn robust per simular partides de Truc, permetre interacció mitjançant interfícies gràfiques o de consola, i entrenar agents intel·ligents amb models avançats com DQN i NFSP.
+
+\section*{Estructura de Directoris}
+
+\begin{itemize}
+    \item \textbf{\texttt{entorn/}}: Nucli de la lògica del joc i l'adaptador per a RLCard.
+    \begin{itemize}
+        \item \texttt{game.py}: Motor lògic del joc. Gestiona els estats de la partida, les regles, la progressió de rondes i mans, i les apostes (Truc i Envit).
+        \item \texttt{env.py}: Adaptador de l'entorn per a RLCard. Tradueix l'estat intern del joc a observacions numèriques i exposa l'API estàndard de l'entorn (\texttt{reset}, \texttt{step}).
+        \item \texttt{cartes\_accions.py}: Fitxer de constants compartides. Defineix la baralla espanyola de 36 cartes i l'\textbf{espai d'accions} complet (19 accions: 3 jugar carta, 7 de aposta/pas i 9 de senyals).
+        \item \texttt{rols/}: Implementacions dels rols del joc (\texttt{dealer.py}, \texttt{judger.py}, \texttt{player.py}).
+    \end{itemize}
+
+    \item \textbf{\texttt{models/}}: Definició de les arquitectures de Xarxes Neuronals.
+    \begin{itemize}
+        \item \texttt{xarxa\_truc.py}: Defineix el \texttt{CosMultiInput}, que utilitza xarxes convolucionals i denses per processar el mapa de cartes i el context del joc en paral·lel. També inclou \texttt{ModelPreEntrenament}.
+        \item \texttt{xarxa\_unificada.py}: Un wrapper end-to-end creat per unificar el Feature Extractor preentrenat amb l'algorisme RL de RLCard (DQN/NFSP). Pot carregar pesos prèviament apresos i congelar-los o re-entrenar-los (\textit{fine-tuning}).
+        \item \texttt{loader.py} i \texttt{adapters/}: Utilitats per la càrrega de models desats.
+    \end{itemize}
+
+    \item \textbf{\texttt{controlador/}} i \textbf{\texttt{vista/}}: Implementació del patró MVC per separar la lògica gràfica i de flux del joc.
+    \begin{itemize}
+        \item \texttt{controlador/}: Conté els gestors interactius com \texttt{model\_interactiu.py} o \texttt{controlador.py} per enllaçar usuaris humans o bots amb la partida.
+        \item \texttt{vista/}: Interfícies per a la interacció. Inclou \texttt{vista\_consola.py} i el directori \texttt{vista\_desktop/} per a la UI visual.
+    \end{itemize}
+
+    \item \textbf{\texttt{entrenament/}}: Lògica d'aprenentatge.
+    \begin{itemize}
+        \item \texttt{entrenamentEstatTruc/}: Conté \texttt{preentrenar\_cos.py}, que extreu datasets sintètics de partides simulatòries per entrenar el "Cos" de la xarxa mitjançant Supervised Learning.
+        \item \texttt{entrenamentsUnificats/}: El nucli del Reinforcement Learning. L'script \texttt{entrenaments\_unificats.py} aglutina la càrrega del Cos, els agents DQN i NFSP i els enfronta amb tècniques com \textit{Reward Scheduling}, \textit{Learning Rate Decay} i un pool d'oponents històrics per l'aprenentatge òptim.
+        \item \texttt{entrenamentRLCard/}: Versions prèvies i documentació teòrica associada com \texttt{entrenaments\_RLCard.md}.
+    \end{itemize}
+
+    \item \textbf{\texttt{notebooks/}}: Fitxers Jupyter interatius d'anàlisi de resultats.
+    \begin{itemize}
+        \item \texttt{Comparativa\_Experiments.ipynb}: Usat per extreure les gràfiques comparant els modes \textit{scratch}, \textit{frozen} i \textit{finetune} de tots dos models, juntament amb la lliga simulada final.
+    \end{itemize}
+
+    \item \textbf{\texttt{demo.py}}: Script de demostració interactiu per jugar per consola de manera ràpida.
+    \item \textbf{\texttt{doc/}}: Documentació tècnica en Markdown i \LaTeX.
+\end{itemize}
+
+\chapter{Documentació de \texttt{env.py}}
+
+\section{Visió General}
+
+\texttt{TrucEnv} és l'entorn que adapta la lògica del joc (\texttt{TrucGame}) a la interfície estàndard de \textbf{RLCard}. La seva funció principal és \textbf{transformar l'estat del joc} (diccionaris llegibles per humans) en \textbf{vectors numèrics} (observacions) que un agent de Reinforcement Learning pot processar. S'hi inclouen modificacions recents per tal que un \textit{wrapper} pla l'adapti als nous models.
+
+\hrulefill
+
+\section{Arquitectura}
+
+\begin{verbatim}
+                    observació, acció
+  +------------+  <------------------>  +------------+
+  |  Agent RL  |                        |  TrucEnv   |
+  +------------+                        |  (env.py)  |
+                                        +-----+------+
+                                              | estat, step
+                                              v
+                                        +------------+
+                                        |  TrucGame  |
+                                        |  (game.py) |
+                                        +--+--+--+---+
+                                           |  |  |
+                              +------------+  |  +------------+
+                              v               v               v
+                        +----------+   +-----------+   +-----------+
+                        |TrucDealer|   |TrucJudger |   |TrucPlayer |
+                        +----------+   +-----------+   +-----------+
+\end{verbatim}
+
+\texttt{TrucEnv} hereta de \texttt{rlcard.envs.Env}, que proporciona el bucle estàndard \texttt{reset()} $\rightarrow$ \texttt{step()} $\rightarrow$ \texttt{get\_payoffs()}.
+
+\hrulefill
+
+\section{Constructor \texttt{\_\_init\_\_}}
+
+\begin{lstlisting}
+TrucEnv(config)
+\end{lstlisting}
+
+\subsection{Paràmetres de configuració (diccionari \texttt{config})}
+
+\begin{longtable}{|l|l|p{8cm}|}
+\hline
+\textbf{Clau} & \textbf{Defecte} & \textbf{Descripció} \\
+\hline
+\texttt{num\_jugadors} & 2 & Nombre de jugadors \\
+\texttt{cartes\_jugador} & 3 & Cartes per jugador \\
+\texttt{puntuacio\_final} & 24 & Punts per guanyar \\
+\texttt{senyes} & False & Activar fase de senyals \\
+\texttt{player\_class} & None & Classe dels jugadors (e.g. \texttt{HumanPlayer}) o \textbf{diccionari} \texttt{\{id: Classe\}} per barrejar tipus \\
+\texttt{verbose} & False & Activar missatges de debug del joc \\
+\texttt{allow\_step\_back} & False & Permetre desfer passos (heretat d'RLCard) \\
+\texttt{seed} & - & Seed per reproducibilitat \\
+\hline
+\end{longtable}
+
+\hrulefill
+
+\section{Variables Internes de l'Entorn}
+
+\subsection{Mapeig de Cartes i Senyals}
+
+\begin{longtable}{|l|l|p{8cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{cartes} & \texttt{list[str]} & Llista de totes les cartes del joc (36 cartes) \\
+\texttt{carta\_map} & \texttt{dict[str, int]} & Mapa \texttt{carta $\rightarrow$ index} per codificar cartes a one-hot \\
+\texttt{signal\_map} & \texttt{dict[str, int]} & Mapa \texttt{senya $\rightarrow$ index} per codificar senyals a one-hot \\
+\hline
+\end{longtable}
+
+\subsection{Dimensions de l'Espai d'Estat}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Valor} (exemple 2J, 3C, -senyes) & \textbf{Descripció} \\
+\hline
+\texttt{num\_cartes} & 36 & Cartes úniques a la baralla \\
+\texttt{espai\_joc\_cartes} & 37 & \texttt{num\_cartes + 1} (inclou slot ``buit'') \\
+\texttt{espai\_hist\_cartes} & 6 & \texttt{num\_jugadors $\times$ cartes\_jugador} (slots historial) \\
+\texttt{espai\_senya} & 10 & \texttt{len(ACTIONS\_SIGNAL) + 1} (9 senyals + buit) \\
+\texttt{espai\_hist\_senyes} & 0 o 6 & 0 si \texttt{senyes=False}, sino \texttt{num\_jugadors $\times$ cartes\_jugador} \\
+\texttt{espai\_info\_publica} & 10 & Puntuacions + apostes + situació \\
+\textbf{\texttt{state\_size}} & \textbf{343} (sense senyes) & Mida total del vector d'observació clàssic \\
+\hline
+\end{longtable}
+
+\subsection{Espais per a RLCard}
+
+\begin{longtable}{|l|p{10cm}|}
+\hline
+\textbf{Variable} & \textbf{Descripció} \\
+\hline
+\texttt{state\_shape} & \texttt{[[state\_size]] * num\_jugadors} --- dimensions de l'observació per jugador \\
+\texttt{action\_shape} & \texttt{[[len(ACTION\_LIST)]] * num\_jugadors} --- 19 accions possibles \\
+\hline
+\end{longtable}
+
+\hrulefill
+
+\section{Mètode Principal: \texttt{\_extract\_state(state)}}
+
+Transforma el diccionari d'estat del joc en un vector numèric per ser utilitzat en les xarxes. Al nou model es retorna com un diccionari subdividit per ser processat pel \texttt{CosMultiInput}.
+
+\subsection{Estructura de l'Estat Observat (\texttt{obs\_cartes} i \texttt{obs\_context})}
+
+\begin{itemize}
+    \item \textbf{\texttt{obs\_cartes}}: Formato \texttt{(6, 4, 9)}, que és utilitzat freqüentment per un Feature Extractor tipus Convolutional Neural Network (CNN). Aporta informació visual sobre la posició i el tipus de cartes que té el jugador i s'han llançat.
+    \item \textbf{\texttt{obs\_context}}: Vector de 17 característiques escalars o senyals simples incloent puntuació, nivells de Truc, etc.
+\end{itemize}
+
+\subsection{Detall Clàssic de cada secció}
+
+\subsubsection{1. Mà del Jugador (one-hot $\times$ \texttt{cartes\_jugador})}
+
+Per cada slot de carta a la mà:
+\begin{itemize}
+    \item Si la carta existeix $\rightarrow$ marca \texttt{1} a la posició de la carta dins dels 36 valors
+    \item Si el slot està buit (ja s'ha jugat) $\rightarrow$ marca \texttt{1} a la posició 37 (simbol ``buit'')
+\end{itemize}
+
+\subsubsection{2. Historial de Cartes (one-hot $\times$ \texttt{espai\_hist\_cartes})}
+
+Codifica cada carta jugada durant la mà. Mateixa codificació que la mà: one-hot de 37 posicions. Permet a l'agent recordar quines cartes s'han jugat i per qui.
+
+\subsubsection{3. Historial de Senyals (one-hot $\times$ \texttt{espai\_hist\_senyes})}
+
+Només actiu si \texttt{senyes=True}. Per cada slot de senyal:
+\begin{itemize}
+    \item Si existeix una senya $\rightarrow$ marca \texttt{1} a la posició corresponent (0-8)
+    \item Si el slot està buit $\rightarrow$ marca \texttt{1} a la posició 10 (simbol ``buit'')
+\end{itemize}
+
+\subsubsection{4. Informació Pública (10 valors escalars)}
+
+\begin{longtable}{|l|l|p{8cm}|}
+\hline
+\textbf{Posició} & \textbf{Contingut} & \textbf{Descripció} \\
+\hline
+0 & \texttt{puntuacio[0]} & Punts de l'equip 0 \\
+1 & \texttt{puntuacio[1]} & Punts de l'equip 1 \\
+2 & \texttt{estat\_truc.level} & Nivell actual del Truc (1,3,6,9,24) \\
+3 & \texttt{estat\_truc.owner + 1} & Qui ha cantat Truc (0=Ningú, 1=J0, 2=J1) \\
+4 & \texttt{estat\_envit.level} & Nivell actual de l'Envit (0,2,4,6,...) \\
+5 & \texttt{estat\_envit.owner + 1} & Qui ha cantat Envit (0=Ningú, 1=J0, 2=J1) \\
+6 & \texttt{fase\_torn} & Fase actual (0/1/2) \\
+7 & \texttt{ma} & Qui és mà \\
+8 & \texttt{comptador\_ronda} & Nombre de rondes completades \\
+9 & \texttt{id\_jugador} & ID del jugador que observa \\
+\hline
+\end{longtable}
+
+\subsection{Retorn de \texttt{\_extract\_state}}
+
+\begin{lstlisting}
+{
+    'obs': {
+        'obs_cartes': np.ndarray,      # Tensorial de cartes
+        'obs_context': np.ndarray      # Vector contextual 1D
+    },
+    'legal_actions': OrderedDict,     # Accions legals com a OrderedDict
+    'raw_obs': state,                 # Estat original (diccionari llegible)
+    'raw_legal_actions': ['passar', 'apostar_truc', ...],  # Noms de les accions
+    'action_record': self.action_recorder  # Historial d'accions (d'RLCard)
+}
+\end{lstlisting}
+
+\hrulefill
+
+\section{Altres Mètodes}
+
+\subsection{\texttt{get\_payoffs()} $\rightarrow$ Recompenses Finals}
+
+Delega a \texttt{TrucGame.get\_payoffs()}, que retorna la diferència de puntuació:
+\begin{lstlisting}
+[score[0] - score[1], score[1] - score[0]]
+\end{lstlisting}
+L'agent que guanyi tindrà payoff positiu, el perdedor negatiu. A entrenaments s'ajusta aquesta recompensa amb el factor Beta per penalitzar fortament les derrotes al tram final.
+
+\subsection{\texttt{\_decode\_action(action\_id)} $\rightarrow$ Descodificar Acció}
+
+Converteix un índex d'acció numèric al seu nom string:
+\begin{lstlisting}
+ACTION_LIST[action_id]  # e.g. 0 -> 'play_card_0', 4 -> 'apostar_truc'
+\end{lstlisting}
+
+\subsection{\texttt{\_get\_legal\_actions()} $\rightarrow$ Accions Legals}
+
+Aquest mètode de l'entorn delega directament a \texttt{TrucGame.get\_legal\_actions()}, que és on realment es calcula la llista d'accions permeses. Retorna una \textbf{llista d'índexs} (enters) que representen les accions vàlides.
+
+\section{Espai d'Accions Complet}
+
+Definit a \texttt{cartes\_accions.py}:
+
+\begin{longtable}{|l|l|l|}
+\hline
+\textbf{Índex} & \textbf{Acció} & \textbf{Categoria} \\
+\hline
+0 & \texttt{play\_card\_0} & Jugar carta \\
+1 & \texttt{play\_card\_1} & Jugar carta \\
+2 & \texttt{play\_card\_2} & Jugar carta \\
+3 & \texttt{apostar\_envit} & Aposta \\
+4 & \texttt{apostar\_truc} & Aposta \\
+5 & \texttt{vull\_envit} & Resposta \\
+6 & \texttt{vull\_truc} & Resposta \\
+7 & \texttt{fora\_envit} & Resposta \\
+8 & \texttt{fora\_truc} & Resposta/Retirada \\
+9 & \texttt{passar} & Control de flux \\
+10--18 & \texttt{senya\_*} & Senyals (9 tipus) \\
+\hline
+\end{longtable}
+
+\hrulefill
+
+\section{Flux d'Ús Típic}
+
+\begin{lstlisting}
+# 1. Configurar
+config = {'num_jugadors': 2, 'cartes_jugador': 3, 'senyes': False, ...}
+env = TrucEnv(config)
+
+# 2. Inicialitzar partida
+state, player_id = env.reset()
+
+# 3. Bucle del joc
+while not env.is_over():
+    action = agent.triar_accio(state)  # L'agent escull
+    state, player_id = env.step(action)
+
+# 4. Obtenir recompenses
+payoffs = env.get_payoffs()  # [+diff, -diff]
+\end{lstlisting}
+
+\hrulefill
+
+\section{Casuístiques Importants}
+
+\subsection{Informació Asimètrica}
+Cada jugador només veu les seves pròpies cartes a \texttt{ma\_jugador}. Les cartes dels rivals \textbf{no} s'inclouen al vector d'observació. L'historial de cartes jugades (\texttt{hist\_cartes}) sí que és públic.
+
+\subsection{Codificació One-Hot}
+S'utilitza one-hot en lloc de valors ordinals perquè la xarxa neuronal no assumeixi una relació lineal entre les cartes. Cada carta és un vector binari independent.
+
+\subsection{Slot ``Buit''}
+L'extra posició (\texttt{num\_cartes + 1} = 37) serveix per marcar slots que encara no tenen carta. Sense aquest símbol, el vector no podria distingir ``no s'ha jugat cap carta'' de ``s'ha jugat la carta 0''.
+
+
+\chapter{Documentació de \texttt{game.py}}
+
+\section{Visió General}
+
+\texttt{TrucGame} és la classe central que implementa tota la lògica del joc del Truc. Gestiona l'estat complet de la partida: jugadors, cartes, apostes (Truc i Envit), rondes, i puntuació global. Actua com a \textbf{motor del joc}, independent de la interfície d'entorn (\texttt{env.py}).
+
+\section{Constructor \texttt{\_\_init\_\_}}
+
+\begin{lstlisting}
+TrucGame(num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=TrucPlayer, verbose=False)
+\end{lstlisting}
+
+\subsection{Paràmetres de configuració}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Paràmetre} & \textbf{Defecte} & \textbf{Descripció} \\
+\hline
+\texttt{num\_jugadors} & 2 & Nombre de jugadors \\
+\texttt{cartes\_jugador} & 3 & Cartes repartides per mà \\
+\texttt{senyes} & False & Activa la fase de senyals \\
+\texttt{puntuacio\_final} & 24 & Punts per guanyar la partida \\
+\texttt{player\_class} & \texttt{TrucPlayer} & Classe o \textbf{diccionari} \texttt{\{id: Classe\}} dels jugadors (permet partides mixtes Human vs Bot) \\
+\texttt{verbose} & False & Si és True, imprimeix missatges de debug per consola \\
+\hline
+\end{longtable}
+
+\hrulefill
+
+\section{Variables Internes del Joc}
+
+\subsection{Jugadors i Rols}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{players} & \texttt{list[TrucPlayer]} & Llista d'instàncies de jugadors \\
+\texttt{dealer} & \texttt{TrucDealer} & Gestiona la baralla i el repartiment \\
+\texttt{judger} & \texttt{TrucJudger} & Determina guanyadors de rondes, envits i mans \\
+\texttt{np\_random} & \texttt{RandomState} & Generador aleatori per reproducibilitat \\
+\hline
+\end{longtable}
+
+\subsection{Control del Torn}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{ma} & \texttt{int} & ID del jugador que és \textbf{mà} (comença jugant). Rota cada mà nova. \\
+\texttt{current\_player} & \texttt{int} & ID del jugador que ha d'actuar ara \\
+\texttt{turn\_player} & \texttt{int} & Jugador amb el torn ``real'' (es restaura després d'una aposta) \\
+\texttt{turn\_phase} & \texttt{int} & Fase actual del torn: 0=Senyals, 1=Joc i Apostes \\
+\texttt{response\_state} & \texttt{ResponseState} & Estat de resposta pendent \\
+\hline
+\end{longtable}
+
+\begin{longtable}{|l|p{10cm}|}
+\hline
+\textbf{Valor} & \textbf{Significat} \\
+\hline
+\texttt{NO\_PENDING} (0) & No hi ha cap aposta pendent de resposta \\
+\texttt{TRUC\_PENDING} (1) & S'ha cantat Truc i s'espera resposta (Vull / Fora / Re-apostar) \\
+\texttt{ENVIT\_PENDING} (2) & S'ha cantat Envit i s'espera resposta (Vull / Fora / Re-apostar) \\
+\hline
+\end{longtable}
+
+\noindent\textbf{Important:}
+Mentre hi ha una resposta pendent, el jugador contrari \textbf{només} pot respondre a l'aposta (vull/fora/re-apostar). No pot jugar cartes ni fer altres accions.
+
+\hrulefill
+
+\subsection{Puntuació i Historial}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{score} & \texttt{list[int]} & Puntuació global \texttt{[equip\_0, equip\_1]} \\
+\texttt{hist\_cartes} & \texttt{list[tuple]} & Historial de cartes jugades: \texttt{(player\_id, carta)} \\
+\texttt{hist\_senyes} & \texttt{list[tuple]} & Historial de senyals: \texttt{(player\_id, senya)} \\
+\texttt{round\_counter} & \texttt{int} & Nombre de rondes completades a la mà actual \\
+\texttt{cartes\_ronda} & \texttt{list[tuple]} & Cartes jugades a la ronda en curs \\
+\texttt{ronda\_winners} & \texttt{list[int]} & Guanyadors de cada ronda (-1 = empat) \\
+\texttt{payoffs} & \texttt{list[int]} & Recompenses finals per a l'entorn RL \\
+\hline
+\end{longtable}
+
+\subsection{Estat del Truc (Aposta de cartes)}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{truc\_level} & \texttt{int} & Nivell actual del Truc (punts en joc per cartes) \\
+\texttt{truc\_owner} & \texttt{int} & Qui ha cantat l'última aposta de Truc (-1 = ningú) \\
+\texttt{previous\_truc\_level} & \texttt{int} & Nivell anterior (per si diuen ``Fora'', saben quants punts guanya el rival) \\
+\hline
+\end{longtable}
+
+\textbf{Seqüència d'escalada del Truc:}
+\begin{verbatim}
+1 (per defecte) -> 3 (Truc) -> 6 (Retruc) -> 9 (Val Nou) -> 24 (Joc Fora)
+\end{verbatim}
+
+\subsection{Estat de l'Envit (Aposta d'envit)}
+
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Variable} & \textbf{Tipus} & \textbf{Descripció} \\
+\hline
+\texttt{envit\_level} & \texttt{int} & Nivell actual de l'Envit \\
+\texttt{envit\_owner} & \texttt{int} & Qui ha cantat l'últim Envit (-1 = ningú) \\
+\texttt{envit\_accepted} & \texttt{bool} & Si l'envit ha estat acceptat \\
+\texttt{previous\_envit\_level} & \texttt{int} & Nivell anterior (per calcular punts si diuen ``Fora'') \\
+\hline
+\end{longtable}
+
+\textbf{Seqüència d'escalada de l'Envit:}
+\begin{verbatim}
+0 (no cantat) -> 2 (Envit) -> 4 (Un mes) -> 6 (Dos mes) -> Tots (Falta Envit)
+\end{verbatim}
+
+\noindent\textbf{Regla ``Tots'' (Falta Envit):}
+Si cap equip supera els 12 punts, val 24 (guanya partida). Si algun equip supera els 12, val \texttt{24 - puntuacio\_del\_lider}.
+
+\hrulefill
+
+\section{Mètodes Principals}
+
+\subsection{\texttt{init\_game()} $\rightarrow$ Inicialitzar Partida}
+
+\begin{enumerate}
+    \item Crea els jugadors amb \texttt{player\_class}
+    \item Crea el dealer i el judger
+    \item Barreja i reparteix cartes
+    \item Inicialitza totes les variables d'estat
+    \item Retorna \texttt{(estat, current\_player)}
+\end{enumerate}
+
+\subsection{\texttt{step(action)} $\rightarrow$ Avançar el Joc}
+
+El mètode principal. Rep una acció (int o string) i actualitza l'estat.
+
+\subsubsection{Flux de decisions:}
+
+\begin{samepage}
+\begin{verbatim}
+step(action)
+      |
+      +--[Resposta pendent?]
+      |        |
+      |   ENVIT_PENDING --> vull_envit | fora_envit | apostar_envit
+      |   TRUC_PENDING  --> vull_truc  | fora_truc  | apostar_truc
+      |
+      +--[NO_PENDING - Torn normal]
+               |
+               +-- Fase 0 (Senyals) --> passar  (avanca a Fase 1)
+               |                    --> senya_* (registra, avanca a Fase 1)
+               |
+               +-- Fase 1 (Apostes  --> apostar_envit --> ENVIT_PENDING
+                   i Joc)           --> apostar_truc  --> TRUC_PENDING
+                                    --> fora_truc     --> Rival guanya, reset ma
+                                    --> play_card_X
+                                         |
+                                    Fi ronda? -> Fi ma? -> Fi partida?
+\end{verbatim}
+\end{samepage}
+
+\subsection{\texttt{\_get\_return\_state()} $\rightarrow$ Retorn Intel·ligent}
+
+Comprova si l'única acció legal és \texttt{passar}. Si és així, \textbf{executa el \texttt{passar} automàticament} per evitar torns trivials (important per a l'entrenament d'agents RL).
+
+\subsection{\texttt{get\_state(player\_id)} $\rightarrow$ Construir Estat}
+
+Retorna un diccionari amb tota la informació visible pel jugador.
+
+\subsection{\texttt{get\_legal\_actions()} $\rightarrow$ Accions Legals}
+
+Determina quines accions pot fer el jugador actual segons la situació:
+
+\begin{longtable}{|l|p{8cm}|}
+\hline
+\textbf{Situació} & \textbf{Accions disponibles} \\
+\hline
+\texttt{ENVIT\_PENDING} & \texttt{vull\_envit}, \texttt{fora\_envit}, (+ \texttt{apostar\_envit} si \texttt{level $\le$ 6}) \\
+\texttt{TRUC\_PENDING} & \texttt{vull\_truc}, \texttt{fora\_truc}, (+ \texttt{apostar\_truc} si \texttt{level < 24}) \\
+Fase 0 (Senyals) & \texttt{passar} + totes les \texttt{senya\_*} \\
+Fase 1 (Apostes i Joc) & \texttt{play\_card\_0}, \texttt{play\_card\_1}, ... (segons cartes disponibles), \texttt{apostar\_envit}\textsuperscript{1}, \texttt{apostar\_truc}\textsuperscript{2}, \texttt{fora\_truc} \\
+\hline
+\end{longtable}
+
+\textsuperscript{1} Només si \texttt{envit\_level == 0} i \texttt{round\_counter == 0} (primera ronda, sense envit previ)
+
+\textsuperscript{2} Només si el jugador actual no és el propietari de l'última aposta de Truc
+
+\subsection{\texttt{\_reset\_hand\_state()} $\rightarrow$ Reset per Nova Mà}
+
+Quan acaba una mà (per guanyador o per "Fora"):
+\begin{enumerate}
+    \item Avança \texttt{ma} al següent jugador
+    \item Barreja i reparteix de nou
+    \item Reseteja totes les variables de Truc, Envit, rondes i historials
+\end{enumerate}
+
+\subsection{\texttt{is\_ma\_over()} i \texttt{is\_over()} $\rightarrow$ Fi de Mà / Partida}
+
+Distingeix els dos nivells d'acabament:
+\begin{itemize}
+    \item \texttt{is\_ma\_over()}: retorna \texttt{True} si la \textbf{mà actual} ha acabat (hi ha guanyador o s'han esgotat les rondes).
+    \item \texttt{is\_over()}: retorna \texttt{True} si la \textbf{partida} ha acabat (\texttt{max(score) >= puntuacio\_final}).
+\end{itemize}
+
+\hrulefill
+
+\section{Casuístiques Especials}
+\subsection{Determinar guanyador de la mà}
+
+El \texttt{TrucJudger.guanyador\_ma()} segueix la següent lògica completament escalable per a partides de 3, 5 o N rondes:
+\begin{enumerate}
+    \item \textbf{Registre de victòries:} Per cada ronda completada, l'equip guanyador suma +1. Si la ronda ha resultat en empat, \textbf{tots dos equips} sumen +1 a la seva victòria.
+    \item \textbf{Majoria absoluta:} Si un equip guanya la \textbf{majoria} de rondes ($\ge$ meitat de les rondes + 1) i l'altre no $\rightarrow$ guanya immediatament.
+    \item Si s'han jugat totes les rondes o tots dos assoleixen la majoria alhora per culpa d'un empat:
+    \begin{itemize}
+        \item L'equip amb més victòries guanya.
+        \item Si estan totalment igualats: guanya qui hagi guanyat la \textbf{primera ronda no empatada}.
+        \item Si absolutament tot són empats: guanya el \textbf{mà}.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Passar automàtic}
+
+\texttt{\_get\_return\_state()} detecta quan l'única acció legal és \texttt{passar} i l'executa automàticament. Això evita que un agent RL hagi de "decidir" una acció trivial, millorant l'eficiència de l'entrenament.
+
+\subsection{Fases del torn}
+
+\begin{samepage}
+\begin{verbatim}
+  Fase 0: Senyals
+      |  passar / senya_*
+      v
+  Fase 1: Joc i Apostes
+      |  play_card_X / (o post-resposta a envit/truc)
+      v
+  Nova Ronda (torna a Fase 0 si senyes=True, sino Fase 1)
+\end{verbatim}
+\end{samepage}
+
+\noindent\textbf{Nota:}
+Si \texttt{senyes=False}, la fase 0 se salta completament i es comença directament a la fase 1.
+\end{document}

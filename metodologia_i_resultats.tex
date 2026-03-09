@@ -1,0 +1,111 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[catalan]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+
+\geometry{margin=2.5cm}
+
+\title{Metodologia i Resultats: Models d'Aprenentatge per Reforç al Joc del Truc}
+\author{Josep Ferriol Font}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Models RLCard: DQN i NFSP}
+L'entrenament d'agents per jugar al Truc s'ha basat principalment en dues grans arquitectures d'Aprenentatge per Reforç (RL) proporcionades per la llibreria RLCard i adaptades a l'entorn del joc. Aquestes arquitectures s'encarreguen d'aprendre l'estratègia i la presa de decisions donat un estat d'informació imperfecta.
+
+\subsection{Deep Q-Network (DQN)}
+El Deep Q-Network és un algorisme clàssic d'aprenentatge basat en la funció de valor.
+\paragraph{Què és i com funciona:}
+El DQN utilitza una xarxa neuronal profunda per estimar la funció $Q(s, a)$, que representa la recompensa futura esperada en prendre l'acció $a$ des de l'estat $s$. Durant l'entrenament, l'agent ajusta els pesos de la xarxa mitjançant la minimització de l'error quadràtic entre les seves prediccions i les recompenses reals observades a través de l'experiència emmagatzemada en un \textit{Replay Buffer}.
+
+\paragraph{Arquitectura i adaptació al Truc:}
+En aquest projecte, s'ha adaptat un bucle d'entrenament \textit{Self-Play} per evitar l'estancament. L'agent principal s'enfronta a una versió "congelada" d'ell mateix que no aprèn. Quan l'agent principal supera un cert llindar de victòries contra un rival aleatori durant la fase d'avaluació, els seus pesos s'actualitzen i es transfereixen a l'oponent congelat. Aquesta "guerra armamentística" força l'agent a millorar contínuament la seva estratègia sense estabilitzar-se contra un oponent fix i previsible. S'utilitza una xarxa multicapa (MLP) típicament amb capes de $[256, 256]$ neurones, injectada com a \texttt{qnet} en l'estructura de RLCard.
+
+\subsection{Neural Fictitious Self-Play (NFSP)}
+L'algorisme NFSP és una tècnica més avançada dissenyada específicament per assolir Equilibris de Nash en jocs competitius d'informació imperfecta.
+
+\paragraph{Què és i com funciona:}
+A diferència del DQN estàndard, que pot oscil·lar contínuament i no convergir en jocs multi-agent d'estratègia mixta, el NFSP manté dues xarxes separades simultàniament:
+\begin{itemize}
+    \item \textbf{Xarxa RL (Q-Network)}: Entrenada per trobar l'estratègia més "greedy" (explotadora) que maximitzi les victòries si coneix l'estratègia del contrincant actual.
+    \item \textbf{Xarxa SL (Supervised Learning)}: Entrenada mitjançant aprenentatge supervisat per interioritzar el comportament històric i generar una "Política Mitjana" o \textit{Average Policy}.
+\end{itemize}
+L'agent intercala de forma estocàstica ambdues polítiques durant l'entrenament per mantenir l'exploració i l'explotació compensades.
+
+\paragraph{Arquitectura i adaptació al Truc:}
+L'entrenament en el Truc es realitza fent que els agents \texttt{P0} i \texttt{P1} avancin simultàniament, emmagatzemant les observacions d'ambdós en els respectius \textit{buffers} alhora. S'avaluen paral·lelament i de forma periòdica modifiquen el seu comportament de generació "exploratori" a "determinista". Al final de l'entrenament d'un NFSP, s'executa un \textit{playoff} o duel final a mort entre les millors versions històriques d'ambdós jugadors. L'agent guanyador es desa com el model final per a producció o inferència.
+
+
+\section{El "Cos": Xarxa Unificada i Preentrenament}
+El joc del Truc requereix processar estructures de dades heterogènies: un mapa de cartes de l'estat actual i una sèrie d'escalars i informació contextual. Per millorar l'extracció de característiques, es dissenya una arquitectura modular on un \textbf{Cos} (Feature Extractor) s'encarrega d'interpretar els estats bruts.
+
+\subsection{Arquitectura del "Cos" (Xarxa Unificada)}
+Implementat al fitxer \texttt{xarxa\_unificada.py}, el Cos s'anomena \texttt{CosMultiInput} i consisteix en dues branques paral·leles que després es fusionen:
+\begin{itemize}
+    \item \textbf{Branca A (Cartes)}: Una Xarxa Neuronal Convolucional (CNN) que rep un tensor de dimensions \texttt{(6, 4, 9)}. Això inclou dos mapes convolucionals que extreuen patrons espacials entre les cartes que el jugador té a la mà i les que s'han jugat a la taula.
+    \item \textbf{Branca B (Context)}: Un Perceptró Multicapa (MLP) lineal per codificar variables numèriques i escalar de dimensió \texttt{(17)}, com els nivells d'Envit, Truc i puntuacions actuals.
+    \item \textbf{Fusió}: Les dues branques es concatenen en un espai latent de \texttt{128} dimensions.
+\end{itemize}
+Aquesta Xarxa Unificada és la capa inferior sobre la qual s'afegeixen els Multi-Layer Perceptrons encarregats de retornar el valor Q o les polítiques de RLCard.
+
+\subsection{El Preentrenament Supervisat}
+Abans de l'entrenament per reforç, s'executa l'script \texttt{preentrenar\_cos.py}. Aquest script duu a terme un aprenentatge supervisat per dotar la xarxa d'una extracció fonamental i profunda sobre el sentit lògic del joc.
+
+\paragraph{Justificació i Metodologia:}
+Comprendre l'estat d'una partida de Truc no és trivial per a una xarxa neuronal des de zero (es triga massa). Per accelerar i consolidar el coneixement de l'agent RL, s'extreuen centenars de milers de mostres de partides aleatòries, etiquetant tres aspectes clau que l'arquitectura ha de predir abans d'aprendre a jugar de debò:
+\begin{enumerate}
+    \item La predicció dels punts d'Envit segons les cartes de la mà (Error Quadràtic Mitjà, MSE).
+    \item La predicció de la força total de la mà per a l'aposta del Truc (MSE).
+    \item La classificació (BCE) de quines de les 19 accions de \texttt{ACTION\_LIST} són legals en aquell precís moment.
+\end{enumerate}
+En preentrenar amb regularització $L2$, Dropout, un esplit 80/20 i \textit{Early Stopping}, s'obté una xarxa extractora (\textit{feature extractor}) molt rica en coneixement de les regles de joc. Aquests pesos es desen i s'incorporen per accelerar significativament la convergència dels models posteriors en la fase RL.
+
+
+\section{Entrenaments Unificats: Anàlisi Profunda}
+L'script \texttt{entrenaments\_unificats.py} integra i orquestra l'entrenament de RL amb diferents modalitats de comportament del Cos.
+
+\subsection{Tècniques d'Entrenament Avançades}
+L'script utilitza metodologies rigoroses de Reinforcement Learning. Les principals tècniques i les seves repercussions són:
+\begin{itemize}
+    \item \textbf{Estratègia d'exploració ($\epsilon$-greedy)}: Es rebaixa l'exploració de manera lineal des del $100\%$ d'atzar fins a un $\epsilon$ mínim del $10\%$. S'assegura que en la primera meitat de l'entrenament el model adquireixi experiència àmplia, mentre que a la segona meitat consolidi estratègies explotadores i fiables.
+    \item \textbf{Learning Rate Scheduling (LR Decay)}: En episodis del 25\%, 50\% i 75\% del total, la taxa d'aprenentatge disminueix dràsticament reduint-se a la meitat. Això evita fluctuacions o destrucció del coneixement prop del punt de convergència (l'asímptota final de la pèrdua) assegurant estabilitat a l'últim tram.
+    \item \textbf{Opponent Pool (Polyak, Random i Pool històric) pel DQN}: L'entrenament contra un únic oponent pot fer que l'agent s'hi sobreajusti (\textit{overfitting}). S'ha implementat que l'agent DQN s'enfronti aleatòriament a: un 20\% Random, un 40\% l'oponent més recent mitjançant \textit{Soft-Update} o actualització Polyak (una actualització del 5\% dels nous pesos constant) i un 40\% a una selecció aleatòria de models anteriors arxivats (\textit{Historical Pool}). Això obliga a l'agent principal a aprendre estratègies més generals i a no oblidar contramesures antigues.
+    \item \textbf{Reward Scheduling (Evolució del factor Beta)}: Es modula el grau d'agressivitat al final de cada victòria introduint o incrementant lleugerament les recompenses negatives en perdre mitjançant l'evolució beta amb el progrés dels episodis, incentivant estratègies inicialment valentes però finalment més conservadores i pragmàtiques.
+\end{itemize}
+
+\subsection{Els Modes `Scratch`, `Frozen` i `Fine-tune`}
+L'script d'entrenaments unificats implementa la integració del preentrenament de tres formes diferents:
+\begin{itemize}
+    \item \textbf{Scratch}: S'inicia l'entrenament des de zero. Tant el mòdul d'extracció com la part de decisions s'entrenen partint de valors aleatoris. Típicament requereix molts més episodis per entendre l'entorn abans de jugar partides de qualitat.
+    \item \textbf{Frozen}: Carrega els pesos ja extrets prèviament per a les dades estructurals del joc i "congela" l'extracció (s'evita que es modifiquin els seus paràmetres, \texttt{requires\_grad = False}). Així, la part superior de la xarxa MLP aprèn de forma rapidíssima a com enllaçar característiques amb la política $Q$ donat que la informació estructural ja li arriba donada i mastegada.
+    \item \textbf{Fine-tune}: Carrega la xarxa preentrenada, però no la congela. Se li apliquen diferents \textit{Learning Rates}: una taxa molt baixa (\texttt{1e-5}) per afinar i corregir suaument la xarxa del Cos sense destruir el coneixement original, i una taxa habitual (\texttt{5e-4}) per a la part de les capes encarregades de la decisió de política.
+\end{itemize}
+
+
+\section{Resultats i Conclusions de la Comparativa}
+Segons les mètiques generades a \texttt{Comparativa\_Experiments.ipynb}, l'anàlisi de l'evolució d'entrenament i les simulacions han demostrat variacions rellevants i interessants quant a rendiment i convergència.
+
+\subsection{Anàlisi de Corbes i Metodologies}
+En l'avaluació al llarg dels episodis s'ha pogut constatar que:
+\begin{itemize}
+    \item \textbf{Mode Fine-tune}: Mostra el creixement d'eficiència més ràpid, obtenint la corba d'aprenentatge i la maximització de la recompensa amb el menor temps. Aquest traspàs de coneixement de regles dóna un fons sòlid sobre el qual aplicar subtils millores estratègiques.
+    \item \textbf{Mode Frozen}: Tot i presentar una primera convergència vertical rapidíssima, mostra limitacions o \textit{plateaus} de rendiment; l'extracció de dades immutables no dóna prou flexibilitat per adaptar-se a matisos profunds introduïts per estratègies d'alta complexitat tàctica.
+    \item \textbf{Mode Scratch}: Ha d'aprendre l'espai d'estats des de la base, essent la corba molt més plana i lenta. No obstant això, assoleix nivells equiparables un cop sobrepassa un nombre molt elevat d'episodis.
+\end{itemize}
+
+\subsection{Leaderboard i Resultats Finals}
+La Lliga de Simulació de partides reals (Round-Robin de 1000 partides entre tots els models carregats) ha llançat resultats conclusius: el \textbf{DQN} format \textbf{Scratch} i en ocasions \textbf{Fine-tune} aconsegueixen la màxima puntuació de victòries davant de tots els models basats en NFSP o Random.
+
+\subsection{Conclusions Tècniques}
+El motiu principal pel qual \textbf{DQN guanya més partides que NFSP} en aquest context resideix en les mecàniques implícites del mateix joc de Truc. El NFSP busca un equilibri conservador i asimptòticament òptim per no poder ser explotat, dissenyat en jocs generalment menys variables i on no es reparteixen aleatòriament cartes i tantes vegades. El DQN Scratch, a base de lluitar agressivament pel \textit{win rate} net i ser entrenat utilitzant estratègies heurístiques (Opponent Pool de versions Polyak anteriors), acaba formant un agent més reactiu i més preparat per arriscar-se al Truc pur, superant estratègies massa "acadèmiques" que un sistema basat en promitjos (Average Policy de NFSP) acaba generant. Finalment, el sistema Fine-tune consolida que el preentrenament resulta un mecanisme òptim de cost temporal, però si hi ha temps i episodis de sobres, un entrenament des de zero complet amb DQN genera la política de més alt rendiment possible.
+
+\end{document}
