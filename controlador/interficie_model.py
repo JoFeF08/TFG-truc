@@ -31,6 +31,14 @@ class Model(Protocol):
         """Aplica una acció i avança l'estat del joc."""
         ...
 
+    def get_guanyador_envit_recent(self) -> tuple[int, int, list[int]] | None:
+        """Retorna (equip, punts, punts_detall) de l'envit que s'acaba de tancar, si n'hi ha."""
+        ...
+
+    def get_guanyador_truc_recent(self) -> tuple[int, int] | None:
+        """Retorna (equip, punts) del truc (mà) que s'acaba de tancar, si n'hi ha."""
+        ...
+
     def es_final(self) -> bool:
         """Retorna True si la partida ha acabat."""
         ...

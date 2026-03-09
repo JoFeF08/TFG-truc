@@ -24,6 +24,14 @@ class Vista(Protocol):
         Si es_bot=True, la vista pot afegir delay visual."""
         ...
 
+    def mostrar_guanyador_envit(self, equip: int, punts: int, punts_detall: list[int]) -> None:
+        """Comunica qui ha guanyat l'envit, quants punts i quins punts tenia cadascú."""
+        ...
+
+    def mostrar_guanyador_truc(self, equip: int, punts: int) -> None:
+        """Comunica qui ha guanyat el truc (la mà) i quants punts."""
+        ...
+
     def mostrar_fi_partida(self, score: list, payoffs: list) -> None:
         """Mostra el resultat final de la partida."""
         ...

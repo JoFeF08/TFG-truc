@@ -60,9 +60,14 @@ class TrucGame:
         self.turn_phase = 0 if self.senyes else 1  # 0 (Senyals), 1 (Joc/Apostes)
         self.response_state = ResponseState.NO_PENDING # Estat de resposta actual
 
+        self.comptador_ma = 1
         self.hist_cartes = []
         self.hist_cartes_ant = []
         self.hist_senyes = []
+        
+        # Guanyadors recents
+        self.ultim_guanyador_envit = None
+        self.ultim_guanyador_truc = None
 
         self.score = [0, 0] # Puntuació global
         
@@ -80,17 +85,17 @@ class TrucGame:
         self.envit_is_falta = False
         
 
-        self.round_counter = 0
-        self.cartes_ronda = [] 
         self.ronda_winners = [] # -1 per empat
+        self.round_counter = 0
+        self.cartes_ronda = []
+
+        self.punts_envit_pendents = None 
         
         return self._get_return_state()
 
     def step(self, action):
-        """
-        Avança l'estat del joc donada una acció.
-        Retorna: (nou_estat, proper_jugador_id)
-        """
+        self.ultim_guanyador_envit = None
+        self.ultim_guanyador_truc = None
         action_str = ACTION_LIST[action] if isinstance(action, int) else action
         player = self.players[self.current_player]
         
@@ -104,22 +109,6 @@ class TrucGame:
                     self.envit_accepted = True
                     self.response_state = ResponseState.NO_PENDING
                     
-                    all_hands = [p.initial_hand for p in self.players]
-                    
-                    # Calcular punts d'Envit de cada jugador per mostrar-los
-                    punts_envit = []
-                    for hand in all_hands:
-                        punts = self.judger.get_envit_ma(hand)
-                        punts_envit.append(punts)
-                    
-                    winner_team = self.judger.guanyador_envits(all_hands, self.ma)
-                    self.debug_print(f"=====>DEBUG: Envit acceptat. Punts: J0={punts_envit[0]}, J1={punts_envit[1]}. Guanyador: Equip {winner_team}. Punts guanyats: {self.envit_level}. Score abans: {self.score}")
-                    self.score[winner_team] += self.envit_level
-                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
-                    
-                    if self.score[winner_team] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.current_player
-                    
                     # Retornar el torn
                     self.current_player = self.turn_player
                     return self._get_return_state() 
@@ -127,10 +116,9 @@ class TrucGame:
                 elif action_str == 'fora_envit':
                     points_won = self.previous_envit_level
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
-                    self.score[winner_team] += points_won
                     
-                    if self.score[winner_team] >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.current_player
+                    self.punts_envit_pendents = (winner_team, points_won, None)
+                    self.ultim_guanyador_envit = (winner_team, points_won, None)
 
                     self.envit_accepted = False 
                     self.envit_owner = -1 
@@ -153,15 +141,23 @@ class TrucGame:
                     return self._get_return_state()
                 
                 elif action_str == 'fora_truc':
-                    self.response_state = ResponseState.NO_PENDING
+                    # Resoldre envit
+                    self._resoldre_envit_si_pendent()
+
+                    # Sumar punts pendents d'envit al tancar el truc
+                    if self.punts_envit_pendents:
+                        eq, pts, _ = self.punts_envit_pendents
+                        self.score[eq] += pts
+                        self.punts_envit_pendents = None
+
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
-                    self.debug_print(f"=====>DEBUG: Jugador {self.current_player} diu 'Fora' al Truc. Jugador {winner_team} guanya {self.previous_truc_level} punts. Score abans: {self.score}")
                     self.score[winner_team] += self.previous_truc_level
-                    self.debug_print(f"=====>DEBUG: Score després: {self.score}")
+                    self.ultim_guanyador_truc = (winner_team, self.previous_truc_level)
                     
-                    if self.score[winner_team] >= self.puntuacio_final:
+                    if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
                     
+                    self.response_state = ResponseState.NO_PENDING
                     self.hist_cartes_ant = list(self.hist_cartes)
                     self._reset_hand_state()
                     return self._get_return_state()
@@ -231,17 +227,26 @@ class TrucGame:
             return self._get_return_state()
         
         elif action_str == 'fora_truc':
-             # Retirar-se voluntàriament
-             winner = (self.current_player + 1) % 2
-             self.score[winner] += self.truc_level
-             
-             if self.score[winner] >= self.puntuacio_final:
-                 return self.get_state(self.current_player), None
+            # Resoldre envit si estava acceptat però no calculat
+            self._resoldre_envit_si_pendent()
+        
+            winner = (self.current_player + 1) % 2
             
-             self.hist_cartes_ant = list(self.hist_cartes)
-             self._reset_hand_state()
-             return self._get_return_state()
+            # Sumar envits pendents
+            if self.punts_envit_pendents:
+                eq, pts, _ = self.punts_envit_pendents
+                self.score[eq] += pts
+                self.punts_envit_pendents = None
 
+            self.score[winner] += self.truc_level
+            self.ultim_guanyador_truc = (winner, self.truc_level)
+            
+            if max(self.score) >= self.puntuacio_final:
+                return self.get_state(self.current_player), None
+            
+            self.hist_cartes_ant = list(self.hist_cartes)
+            self._reset_hand_state()
+            return self._get_return_state()
 
             
         elif action_str.startswith('play_card'):
@@ -266,14 +271,23 @@ class TrucGame:
                 self.cartes_ronda = []
                 self.round_counter += 1
 
-                # Comprovar fi de mà just després de tancar una ronda (majoria o 3 rondes)
+                # Comprovar fi de mà just després de tancar una ronda
                 winner_ma = self.judger.guanyador_ma(self.ronda_winners, self.ma)
                 if winner_ma != -1:
+                    # Resoldre envit
+                    self._resoldre_envit_si_pendent()
+
+                    if self.punts_envit_pendents:
+                        eq_env, pts_env, _ = self.punts_envit_pendents
+                        self.score[eq_env] += pts_env
+                        self.punts_envit_pendents = None
+
                     self.debug_print(f"=====>DEBUG: Mà acabada. Guanyador equip: {winner_ma}. Punts guanyats: {self.truc_level}. Score abans: {self.score}")
                     self.score[winner_ma] += self.truc_level
+                    self.ultim_guanyador_truc = (winner_ma, self.truc_level)
                     self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
-                    if self.score[winner_ma] >= self.puntuacio_final:
+                    if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
 
                     self.hist_cartes_ant = list(self.hist_cartes)
@@ -288,12 +302,29 @@ class TrucGame:
         return self._get_return_state()
 
     def _get_return_state(self):
-        # Comprovar si només podem passar
         legal_actions = self.get_legal_actions()
         if len(legal_actions) == 1 and legal_actions[0] == ACTION_SPACE['passar']:
              return self.step('passar')
         
         return self.get_state(self.current_player), self.current_player
+
+    def _resoldre_envit_si_pendent(self):
+        """
+        Calcula el guanyador de l'envit només si s'ha acceptat (vull_envit) 
+        però encara no s'ha resolt. Es crida al finalitzar la mà o al tancar el truc.
+        """
+        if self.envit_accepted and self.punts_envit_pendents is None:
+            all_hands = [p.initial_hand for p in self.players]
+            
+            punts_envit = []
+            for hand in all_hands:
+                punts = self.judger.get_envit_ma(hand)
+                punts_envit.append(punts)
+            
+            winner_team = self.judger.guanyador_envits(all_hands, self.ma)
+            self.debug_print(f"=====>DEBUG: Resolent Envit acceptat al final. Punts: J0={punts_envit[0]}, J1={punts_envit[1]}. Guanyador: Equip {winner_team}. Punts guanyats: {self.envit_level}.")
+            self.punts_envit_pendents = (winner_team, self.envit_level, punts_envit)
+            self.ultim_guanyador_envit = (winner_team, self.envit_level, punts_envit)
 
     def get_state(self, player_id):
         """
@@ -306,6 +337,7 @@ class TrucGame:
         # --- CONTEXT GENERAL ---
         state['id_jugador'] = player_id
         state['ma'] = self.ma
+        state['comptador_ma'] = self.comptador_ma
         state['puntuacio'] = self.score
 
         # --- ESTAT DEL TORN ---
@@ -445,6 +477,7 @@ class TrucGame:
     def _reset_hand_state(self):
         # Avançar mà
         self.ma = (self.ma + 1) % self.num_jugadors
+        self.comptador_ma += 1
         self.current_player = self.ma
         self.turn_player = self.ma
         
@@ -470,6 +503,7 @@ class TrucGame:
         self.ronda_winners = []
         self.hist_cartes = []
         self.hist_senyes = []
+        self.punts_envit_pendents = None
         
         self.turn_phase = 0 if self.senyes else 1
         self.response_state = ResponseState.NO_PENDING

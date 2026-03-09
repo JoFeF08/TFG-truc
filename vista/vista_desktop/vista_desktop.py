@@ -243,59 +243,29 @@ class VistaDesktop:
         return self._wait()
 
     def _build_game_ui(self, accions_legals, state, readonly=False):
-        ma_actual = state.get("ma", 0)
+        ma_actual = state.get("comptador_ma", 1)
         puntuacio_real = state.get("puntuacio", [0, 0])
         
         if not hasattr(self, "_visual_score"):
             self._visual_score = list(puntuacio_real)
             self._last_real_score = list(puntuacio_real)
         
-        # 1. DETECCIÓ INDIVIDUAL DE PUNTS (S'encuen separats)
-        for i in range(2):
-            if puntuacio_real[i] > self._last_real_score[i]:
-                punts_totals_nous = puntuacio_real[i] - self._last_real_score[i]
-                
-                # Usem la info de pending_score del motor si existeix al darrer estat
-                punts_envit_pendents = 0
-                if hasattr(self, "_last_state"):
-                     pending_list = self._last_state.get("estat_envit", {}).get("pending_score", [0, 0])
-                     punts_envit_pendents = pending_list[i]
-                
-                # Lògica: Si l'equip tenia envits pendents, els separem de la pujada total.
-                punts_envit = min(punts_totals_nous, punts_envit_pendents)
-                punts_truc = punts_totals_nous - punts_envit
-
-                if punts_envit > 0:
-                    self._queued_points.append((i, punts_envit, "ENVIT"))
-                if punts_truc > 0:
-                    motiu_truc = "TRUC"
-                    last_action = self._action_log[-1][2].lower() if self._action_log else ""
-                    if "fora_truc" in last_action: motiu_truc = "FORA TRUC"
-                    self._queued_points.append((i, punts_truc, motiu_truc))
-
         self._last_real_score = list(puntuacio_real)
 
-        # 2. CANVI DE MÀ: Alliberem punts i netegem per a la nova mà
+        #feim net nova mà
         if self._last_ma_for_log != -1 and ma_actual != self._last_ma_for_log:
             # Abans de netejar, fem un darrer bake amb el que s'acaba de tancar
-            hist_complet = state.get("hist_cartes", []) + state.get("hist_cartes_ant", [])
-            self._bake_log_cards(hist_complet, self._last_ma_for_log)
-            
-            for equip, pts, motiu in self._queued_points:
-                msg = f"Equip {equip} guanya {pts} pts ({motiu})"
-                if not self._action_log or self._action_log[-1][2] != msg:
-                    self._action_log.append((-1, "SISTEMA", msg))
-                self._visual_score[equip] += pts
-            self._queued_points = []
+            hist_anterior = state.get("hist_cartes_ant", [])
+            self._bake_log_cards(hist_anterior, self._last_ma_for_log)
 
-        # Missatge de Nova Mà (un sol cop)
+        # Missatge de Nova Mà
         if ma_actual != self._last_ma_for_log:
-            msg_ma = f"--- Nova Mà {ma_actual + 1} ---"
+            msg_ma = f"--- Nova Mà {ma_actual} ---"
             if not self._action_log or self._action_log[-1][2] != msg_ma:
                 self._action_log.append((-1, "SISTEMA", msg_ma))
             self._last_ma_for_log = ma_actual
             
-        # 3. CANVI DE RONDA: Separador visual al log
+        # Separador visual al log
         ronda_actual = state.get("comptador_ronda", 0)
         if (ronda_actual != self._last_ronda_for_log and 
             self._last_ma_for_log != -1 and
@@ -307,10 +277,9 @@ class VistaDesktop:
             
         self._last_ronda_for_log = ronda_actual
 
-        # 4. Sincronitzar noms de cartes (Baking)
+        # Sincronitzar noms de cartes
         self._bake_log_cards(state.get("hist_cartes", []), ma_actual)
 
-        # 4. UI amb els punts visuals (retinguts)
         state_for_ui = state.copy()
         state_for_ui["puntuacio"] = list(self._visual_score)
         
@@ -584,11 +553,16 @@ class VistaDesktop:
         log_text.pack(side="left", fill="both", expand=True)
         log_scroll.config(command=log_text.yview)
         if self._action_log:
+            log_text.config(state="normal")
             for pid, nom, act in self._action_log:
-                log_text.config(state="normal")
                 if pid == -1: # Missatge de sistema (punts, canvi de mà)
-                    log_text.insert("end", f"{act}\n", "sistema")
-                    log_text.tag_config("sistema", foreground="#d0a040", font=("", 10, "italic"))
+                    tag = "sistema"
+                    if "pts de TRUC" in act or "pts d'ENVIT" in act:
+                        tag = "guanyador"
+                        log_text.tag_config("guanyador", foreground="#e06060", font=("", 10, "bold"))
+                    else:
+                        log_text.tag_config("sistema", foreground="#d0a040", font=("", 10, "italic"))
+                    log_text.insert("end", f"{act}\n", tag)
                 else:
                     try:
                         idx = ACTION_LIST.index(act)
@@ -596,7 +570,7 @@ class VistaDesktop:
                     except (ValueError, IndexError):
                         act_visible = act
                     log_text.insert("end", f"J{pid} ({nom}): {act_visible}\n")
-                log_text.config(state="disabled")
+            log_text.config(state="disabled")
             log_text.see("end")
         else:
             log_text.config(state="normal")
@@ -640,22 +614,81 @@ class VistaDesktop:
         if es_bot:
             time.sleep(self.BOT_DELAY_S)
 
+    def mostrar_guanyador_envit(self, equip: int, punts: int, punts_detall: list[int]) -> None:
+        detall_str = ""
+        if punts_detall:
+            detall_str = f" (Punts: " + ", ".join(f"J{i}:{p}" for i, p in enumerate(punts_detall)) + ")"
+        msg = f"Equip {equip} guanya {punts} pts d'ENVIT{detall_str}"
+        self._action_log.append((-1, "SISTEMA", msg))
+        self._visual_score[equip] += punts
+
+    def mostrar_guanyador_truc(self, equip: int, punts: int) -> None:
+        msg = f"Equip {equip} guanya {punts} pts de TRUC"
+        self._action_log.append((-1, "SISTEMA", msg))
+        self._visual_score[equip] += punts
+
     def mostrar_fi_partida(self, score: list, payoffs: list) -> None:
         self._schedule(self._build_game_over, score, payoffs)
         self._wait() # Esperar que l'usuari tanqui o vulgui sortir
 
     def _build_game_over(self, score, payoffs):
         self._clear()
-        f = tk.Frame(self._root, bg=BG_PANEL, padx=30, pady=30)
-        f.place(relx=0.5, rely=0.5, anchor="center")
-        tk.Label(f, text="Joc acabat!", font=("", 18, "bold"),
-                 bg=BG_PANEL, fg=FG).pack(pady=(0, 12))
-        tk.Label(f, text=f"E0: {score[0]}  —  E1: {score[1]}",
-                 font=("", 15), bg=BG_PANEL, fg=FG).pack()
-        tk.Label(f, text=f"Payoffs: {payoffs}",
-                 font=("", 11), bg=BG_PANEL, fg="#aaa").pack(pady=(4, 16))
         
-        tk.Button(f, text="Tancar", bg=BG_BTN, fg="white",
+        # Panell de resultats dalt
+        top = tk.Frame(self._root, bg=BG_PANEL, padx=30, pady=20)
+        top.pack(side="top", fill="x")
+        
+        tk.Label(top, text="Joc acabat!", font=("", 18, "bold"),
+                 bg=BG_PANEL, fg=FG).pack(pady=(0, 12))
+        tk.Label(top, text=f"E0: {score[0]}  —  E1: {score[1]}",
+                 font=("", 15), bg=BG_PANEL, fg=FG).pack()
+        tk.Label(top, text=f"Payoffs: {payoffs}",
+                 font=("", 11), bg=BG_PANEL, fg="#aaa").pack(pady=(4, 10))
+
+        # Panell central amb l'historial
+        hist_f = tk.Frame(self._root, bg=BG, padx=20, pady=10)
+        hist_f.pack(side="top", fill="both", expand=True)
+        
+        tk.Label(hist_f, text="Historial de la partida", bg=BG, fg=FG_DIM, font=("", 12, "bold")).pack(anchor="w", pady=4)
+        
+        log_frame = tk.Frame(hist_f, bg="#252a32")
+        log_frame.pack(fill="both", expand=True)
+        
+        scroll = tk.Scrollbar(log_frame)
+        scroll.pack(side="right", fill="y")
+        
+        txt = tk.Text(log_frame, wrap="word", bg="#252a32", fg="#d0e0d0",
+                      font=("", 10), state="disabled", relief="flat", padx=6, pady=6,
+                      yscrollcommand=scroll.set)
+        txt.pack(side="left", fill="both", expand=True)
+        scroll.config(command=txt.yview)
+        
+        # Emplenar historial amb els mateixos colors que el log normal
+        if self._action_log:
+            txt.config(state="normal")
+            for pid, nom, act in self._action_log:
+                if pid == -1:
+                    tag = "sistema"
+                    if "pts de TRUC" in act or "pts d'ENVIT" in act:
+                        tag = "guanyador"
+                        txt.tag_config("guanyador", foreground="#e06060", font=("", 10, "bold"))
+                    else:
+                        txt.tag_config("sistema", foreground="#d0a040", font=("", 10, "italic"))
+                    txt.insert("end", f"{act}\n", tag)
+                else:
+                    try:
+                        idx = ACTION_LIST.index(act)
+                        act_visible = ACCIONS_CAT[idx] if idx < len(ACCIONS_CAT) else act
+                    except (ValueError, IndexError):
+                        act_visible = act
+                    txt.insert("end", f"J{pid} ({nom}): {act_visible}\n")
+            txt.config(state="disabled")
+            txt.see("end")
+
+        # Botó tancar baix
+        bot = tk.Frame(self._root, bg=BG_PANEL, pady=15)
+        bot.pack(side="bottom", fill="x")
+        tk.Button(bot, text="Tancar", bg=BG_BTN, fg="white",
                   relief="flat", padx=14, pady=6, font=("", 11, "bold"),
                   command=lambda: self._submit_action(None)).pack()
 
@@ -697,41 +730,42 @@ class VistaDesktop:
         
         return f"{n} {p}"
 
-    def _bake_log_cards(self, hist_cartes, ma_actual):
+    def _bake_log_cards(self, current_hand_cards, hand_num):
         """
         Sincronitza els placeholders "play_card_X" del log amb els noms reals
         de les cartes extrets de l'historial de la mà corresponent.
         """
         if not self._action_log: return
 
-        # 1. Trobar on comencen les accions de la mà actual al log
-        # Busquem l'últim separador de "Nova Mà [ma_actual+1]"
+        # 1. Trobar l'inici de la mà actual al log
         start_idx = 0
-        tag_buscat = f"--- Nova Mà {ma_actual + 1}"
+        tag_buscat = f"--- Nova Mà {hand_num} ---"
         for i in range(len(self._action_log)-1, -1, -1):
-             if self._action_log[i][0] == -1 and tag_buscat in self._action_log[i][2]:
-                 start_idx = i + 1
-                 break
+            if self._action_log[i][0] == -1 and tag_buscat in self._action_log[i][2]:
+                start_idx = i
+                break
         
-        # 2. Mapejar pids -> llista de cartes jugades en aquesta mà segons hist_cartes
+        # 2. Mapejar pids -> llista de cartes jugades en AQUESTA mà
         cards_by_pid = {}
-        # Filtrem nomes les cartes de la mà actual si hist_cartes les inclou de mans anteriors 
-        for entry in hist_cartes:
+        for entry in current_hand_cards:
             if len(entry) == 3:
                 p, r, c = entry
             else:
                 p, c = entry
             cards_by_pid.setdefault(p, []).append(c)
             
-        # 3. Recórrer el log des de start_idx i traduir si cal
+        # 3. Recórrer el log des de start_idx i traduir fins trobar la propera mà
         counts = {}
+        next_tag = f"--- Nova Mà {hand_num + 1} ---"
+
         for i in range(start_idx, len(self._action_log)):
+            # Si trobem l'inici d'una altra mà, parem de bakejar aquesta
+            if self._action_log[i][0] == -1 and next_tag in self._action_log[i][2]:
+                break
+
             pid, nom, act = self._action_log[i]
             if pid == -1: continue
             
-            # Normalitzem per si el text ja ha estat tocat pel diccionari de traduccions UI
-            # IMPORTANT: També hem de detectar les línies que JA HEM BAKED ("Tira el")
-            # perquè el comptador (occ) no perdi el compte de quantes cartes portem.
             act_str = str(act)
             is_play = (act_str.startswith("play_card_") or 
                       "Jugar carta" in act_str or 
@@ -741,8 +775,6 @@ class VistaDesktop:
                 occ = counts.get(pid, 0)
                 counts[pid] = occ + 1
                 
-                # Si encara és un placeholder de codi, el "forgem" (bake) amb el nom real
-                # O si és el text genèric "Jugar carta X"
                 if pid in cards_by_pid and occ < len(cards_by_pid[pid]):
                     card_code = cards_by_pid[pid][occ]
                     card_name = self._card_to_name(card_code)

@@ -28,6 +28,7 @@ class Controlador:
                     return  # han tancat la finestra
                 self.model.aplicar_accio(accio)
                 self.vista.mostrar_accio(pid, ACTION_LIST[accio], es_bot=False)
+                self._comunicar_esdeveniments_recents()
             else:
                 # Mostrar l'estat des de perspectiva humana
                 huma_pid = self._trobar_huma()
@@ -38,6 +39,7 @@ class Controlador:
                 accio, nom = self.model.get_accio_bot(pid)
                 self.model.aplicar_accio(accio)
                 self.vista.mostrar_accio(pid, nom, es_bot=True)
+                self._comunicar_esdeveniments_recents()
 
         resultat = self.model.get_resultat()
         self.vista.mostrar_fi_partida(resultat["score"], resultat["payoffs"])
@@ -48,6 +50,18 @@ class Controlador:
             if not self.vista.demanar_repetir():
                 self.vista.mostrar_sortint()
                 break
+
+    def _comunicar_esdeveniments_recents(self) -> None:
+        """Consulta el model i comunica a vista guanyadors recents d'envit o truc."""
+        envit = self.model.get_guanyador_envit_recent()
+        if envit:
+            equip, punts, detalls = envit
+            self.vista.mostrar_guanyador_envit(equip, punts, detalls)
+
+        truc = self.model.get_guanyador_truc_recent()
+        if truc:
+            equip, punts = truc
+            self.vista.mostrar_guanyador_truc(equip, punts)
 
     def _trobar_huma(self) -> int | None:
         """Retorna l'ID del primer jugador humà, o None si no n'hi ha."""

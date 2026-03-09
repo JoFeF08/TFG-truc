@@ -83,6 +83,14 @@ class ModelInteractiu:
         assert self._game is not None
         self._game.step(int(accio))
 
+    def get_guanyador_envit_recent(self) -> tuple[int, int, list[int]] | None:
+        if self._game is None: return None
+        return self._game.ultim_guanyador_envit
+
+    def get_guanyador_truc_recent(self) -> tuple[int, int] | None:
+        if self._game is None: return None
+        return self._game.ultim_guanyador_truc
+
     def es_final(self) -> bool:
         if self._game is None:
             return True
