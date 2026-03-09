@@ -412,7 +412,10 @@ class VistaDesktop:
                      font=("", 11)).pack(side="left")
 
         def cards_count(pid):
-            n = sum(1 for (p, r, c) in hist_cartes if p == pid)
+            n = 0
+            for entry in hist_cartes:
+                if entry[0] == pid:
+                    n += 1
             return max(0, 3 - n)
 
         def columna_altre(parent, pid, etiqueta, pack_side="left"):
@@ -458,7 +461,14 @@ class VistaDesktop:
         cartes_per_mostrar = list(hist_cartes_estat)
 
         piles = {}
-        for pid, r, card in cartes_per_mostrar:
+        counts_for_piles = {}
+        for entry in cartes_per_mostrar:
+            if len(entry) == 3:
+                pid, r, card = entry
+            else:
+                pid, card = entry
+                r = counts_for_piles.get(pid, 0)
+                counts_for_piles[pid] = r + 1
             piles.setdefault(pid, {})[r] = card
 
         center_box = tk.Frame(table_frame, bg="#0d2a0e", relief="ridge", bd=2, padx=8, pady=6)
@@ -706,8 +716,11 @@ class VistaDesktop:
         # 2. Mapejar pids -> llista de cartes jugades en aquesta mà segons hist_cartes
         cards_by_pid = {}
         # Filtrem nomes les cartes de la mà actual si hist_cartes les inclou de mans anteriors 
-        # (tot i que normalment es reseteja)
-        for p, r, c in hist_cartes:
+        for entry in hist_cartes:
+            if len(entry) == 3:
+                p, r, c = entry
+            else:
+                p, c = entry
             cards_by_pid.setdefault(p, []).append(c)
             
         # 3. Recórrer el log des de start_idx i traduir si cal
