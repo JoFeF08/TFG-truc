@@ -171,25 +171,10 @@ class TrucEnv(Env):
 
     def set_reward_beta(self, beta):
         self.reward_beta = beta
+        self.game.set_reward_beta(beta)
 
     def get_payoffs(self):
-        score    = self.game.score
-        objectiu = self.game.puntuacio_final
-        payoffs  = []
-
-        # Formula: R = sign(delta) * (beta + (1 - beta) * sqrt(|delta|/T))
-        for pid in range(self.num_jugadors):
-            oponent = 1 - pid
-            delta = score[pid] - score[oponent]
-            
-            if delta == 0:
-                payoffs.append(0.0)
-            else:
-                sign = 1.0 if delta > 0 else -1.0
-                val = self.reward_beta + (1.0 - self.reward_beta) * np.sqrt(abs(delta) / objectiu)
-                payoffs.append(sign * val)
-
-        return payoffs
+        return self.game.get_payoffs()
 
     def get_estat_taula(self, player_id):
         """
