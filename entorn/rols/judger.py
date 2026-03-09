@@ -22,7 +22,9 @@ FORCA_SET_ESPASES = 98
 FORCA_SET_ORS = 97
 FORCA_TRES = 90
 FORCA_AS_BORD = 70
-FORCA_FIGURES = 60 
+FORCA_12 = 60
+FORCA_11 = 58
+FORCA_10 = 56
 FORCA_SET_BORD = 55 # 7 B, 7 C
 FORCA_SIS = 50
 FORCA_CINC = 40
@@ -101,7 +103,9 @@ class TrucJudger:
         
         if num == '1': return FORCA_AS_BORD # As Ors o Copes
         
-        if num in ['10', '11', '12']: return FORCA_FIGURES
+        if num == '12': return FORCA_12
+        if num == '11': return FORCA_11
+        if num == '10': return FORCA_10
         
         if num == '7': return FORCA_SET_BORD # 7 Bastos o Copes
         
