@@ -57,10 +57,11 @@ class TrucGame:
         self.current_player = self.ma
         self.turn_player = self.ma
 
-        self.turn_phase = 0 if self.senyes else 1  # 0 (Senyals), 1 (Apostes), 2 (Joc/Cartes)
+        self.turn_phase = 0 if self.senyes else 1  # 0 (Senyals), 1 (Joc/Apostes)
         self.response_state = ResponseState.NO_PENDING # Estat de resposta actual
 
         self.hist_cartes = []
+        self.hist_cartes_ant = []
         self.hist_senyes = []
 
         self.score = [0, 0] # Puntuació global
@@ -161,6 +162,7 @@ class TrucGame:
                     if self.score[winner_team] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
                     
+                    self.hist_cartes_ant = list(self.hist_cartes)
                     self._reset_hand_state()
                     return self._get_return_state()
 
@@ -173,9 +175,7 @@ class TrucGame:
             
         elif action_str == 'passar':
             if self.turn_phase == 0:
-                self.turn_phase = 1 # Senyal -> Apostes
-            elif self.turn_phase == 1:
-                self.turn_phase = 2 # Apostes -> Jugar
+                self.turn_phase = 1 # Senyal -> Joc i Apostes
             
             return self._get_return_state()
             
@@ -238,6 +238,7 @@ class TrucGame:
              if self.score[winner] >= self.puntuacio_final:
                  return self.get_state(self.current_player), None
             
+             self.hist_cartes_ant = list(self.hist_cartes)
              self._reset_hand_state()
              return self._get_return_state()
 
@@ -275,6 +276,7 @@ class TrucGame:
                     if self.score[winner_ma] >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
 
+                    self.hist_cartes_ant = list(self.hist_cartes)
                     self._reset_hand_state()
                     return self.get_state(self.current_player), self.current_player
             else:
@@ -328,8 +330,11 @@ class TrucGame:
         state['ma_jugador'] = [c for c in player.hand]
         state['accions_legals'] = self.get_legal_actions()
 
-        # --- HISTORIAL ---
-        state['hist_cartes'] = self.hist_cartes
+        # --- HISTORIAL FILTRAT PER VISIBILITAT ---
+        # Cartes visibles: cartes pròpies (totes) + cartes jugades dels rivals (totes)
+        state['hist_cartes'] = list(self.hist_cartes)
+        state['hist_cartes_ant'] = list(self.hist_cartes_ant)
+        state['cartes_taula_actual'] = list(self.cartes_ronda)
         state['hist_senyes'] = self.hist_senyes
 
         return state
@@ -373,7 +378,7 @@ class TrucGame:
                      actions.append(ACTION_SPACE[act_str])
             return actions
 
-        # Fase 1: Apostes
+        # Fase 1: Joc i Apostes
         if self.turn_phase == 1:            
             # Envit: Només si ningú ha cantat res encara i primera ronda
             if self.envit_level == 0 and self.round_counter == 0:
@@ -384,15 +389,11 @@ class TrucGame:
                  actions.append(ACTION_SPACE['apostar_truc'])
             
             actions.append(ACTION_SPACE['fora_truc'])
-            actions.append(ACTION_SPACE['passar'])
             
-            return actions
-
-        # Fase 2: Jugar Carta
-        if self.turn_phase == 2:
             num_cards = len(player.hand)
             for i in range(num_cards):
                 actions.append(ACTION_SPACE[f'play_card_{i}'])
+
             return actions
 
 
@@ -413,6 +414,33 @@ class TrucGame:
 
     def is_over(self):
         return max(self.score) >= self.puntuacio_final
+
+    def get_payoffs(self):
+        """
+        Retorna els payoffs (recompenses) finals.
+        Utilitza la mateixa fórmula que TrucEnv per mantenir la coherència:
+        R = sign(delta) * (beta + (1 - beta) * sqrt(|delta|/T))
+        """
+        beta = getattr(self, 'reward_beta', 0.5)
+        score = self.score
+        objectiu = self.puntuacio_final
+        payoffs = []
+
+        for pid in range(self.num_jugadors):
+            oponent = (pid + 1) % 2
+            delta = score[pid] - score[oponent]
+            
+            if delta == 0:
+                payoffs.append(0.0)
+            else:
+                sign = 1.0 if delta > 0 else -1.0
+                val = beta + (1.0 - beta) * np.sqrt(abs(delta) / objectiu)
+                payoffs.append(sign * val)
+
+        return payoffs
+
+    def set_reward_beta(self, beta):
+        self.reward_beta = beta
 
     def _reset_hand_state(self):
         # Avançar mà

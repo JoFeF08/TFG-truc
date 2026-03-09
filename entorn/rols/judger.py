@@ -204,7 +204,7 @@ class TrucJudger:
 
     def guanyador_ma(self, guanyadors_rondes, ma):
         """
-        Determina el guanyador de la mà.
+        Determina el guanyador de la mà garantint que funcioni per 3, 5 o N rondes.
         
         Args:
             guanyadors_rondes: Llista de guanyadors de cada ronda jugada (-1 = empat).
@@ -220,15 +220,19 @@ class TrucJudger:
         for w in rw:
             if w != -1:
                 wins[self.get_equip(w)] += 1
+            else:
+                # Un empat compta com a victòria per a tots dos
+                wins[0] += 1
+                wins[1] += 1
                 
-        #més de la meitat de les rondes
+        # majoria absoluta de rondes
         majoria = (self.n_cartes // 2) + 1
         
-        if wins[0] >= majoria: return 0
-        if wins[1] >= majoria: return 1
+        if wins[0] >= majoria and wins[1] < majoria: return 0
+        if wins[1] >= majoria and wins[0] < majoria: return 1
         
-        #si s'han jugat totes les rondes
-        if n_jugades == self.n_cartes:
+        # si tots dos arriben a la majoria a la vegada
+        if (wins[0] >= majoria and wins[1] >= majoria) or n_jugades == self.n_cartes:
             if wins[0] > wins[1]: return 0
             if wins[1] > wins[0]: return 1
             

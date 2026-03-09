@@ -11,12 +11,12 @@ _IMG_DIR = Path(__file__).resolve().parent / "img_iu" / "cartesSeparades"
 
 ACCIONS_CAT = [
     "Jugar carta 1", "Jugar carta 2", "Jugar carta 3",
-    "Apostar envit", "Truc",
+    "Apostar envit", "Apostar truc",
     "Vull envit", "Vull truc", "Fora envit", "Fora truc",
     "Passar",
-    "Senya 11 bastos", "Senya 10 ors", "Senya as espases",
-    "Senya as bastos", "Senya manilla espases", "Senya manilla ors",
-    "Senya tres", "Senya as bord", "Senya cegas",
+    "Senya 11 Bastos", "Senya 10 Oros", "Senya As Espases",
+    "Senya As Bastos", "Senya 7 Espases", "Senya 7 Oros",
+    "Senya 3", "Senya As bord", "Senya cegas",
 ]
 
 ACCIO_TECLA = {
@@ -71,6 +71,11 @@ class VistaDesktop:
         self._card_images = {}
         self._action_log = []
         self._config = {}  # s'omple des de demanar_config
+        self._visual_score = [0, 0] 
+        self._last_real_score = [0, 0] 
+        self._queued_points = [] 
+        self._last_ma_for_log = -1 # -1 ens permet saber que encara no hem processat cap frame
+        self._last_ronda_for_log = -1
 
     def _ensure_tk(self):
         if self._root is not None:
@@ -82,8 +87,8 @@ class VistaDesktop:
             self._root.title("Truc")
             self._root.configure(bg=BG)
             # Mida inicial i límits perquè la taula i el panell d'accions es vegin bé
-            self._root.geometry("960x720")
-            self._root.minsize(800, 600)
+            self._root.geometry("1200x900")
+            self._root.minsize(1000, 750)
             self._root.protocol("WM_DELETE_WINDOW", self._on_close)
             ready.set()
             self._root.mainloop()
@@ -238,26 +243,98 @@ class VistaDesktop:
         return self._wait()
 
     def _build_game_ui(self, accions_legals, state, readonly=False):
+        ma_actual = state.get("ma", 0)
+        puntuacio_real = state.get("puntuacio", [0, 0])
+        
+        if not hasattr(self, "_visual_score"):
+            self._visual_score = list(puntuacio_real)
+            self._last_real_score = list(puntuacio_real)
+        
+        # 1. DETECCIÓ INDIVIDUAL DE PUNTS (S'encuen separats)
+        for i in range(2):
+            if puntuacio_real[i] > self._last_real_score[i]:
+                punts_totals_nous = puntuacio_real[i] - self._last_real_score[i]
+                
+                # Usem la info de pending_score del motor si existeix al darrer estat
+                punts_envit_pendents = 0
+                if hasattr(self, "_last_state"):
+                     pending_list = self._last_state.get("estat_envit", {}).get("pending_score", [0, 0])
+                     punts_envit_pendents = pending_list[i]
+                
+                # Lògica: Si l'equip tenia envits pendents, els separem de la pujada total.
+                punts_envit = min(punts_totals_nous, punts_envit_pendents)
+                punts_truc = punts_totals_nous - punts_envit
+
+                if punts_envit > 0:
+                    self._queued_points.append((i, punts_envit, "ENVIT"))
+                if punts_truc > 0:
+                    motiu_truc = "TRUC"
+                    last_action = self._action_log[-1][2].lower() if self._action_log else ""
+                    if "fora_truc" in last_action: motiu_truc = "FORA TRUC"
+                    self._queued_points.append((i, punts_truc, motiu_truc))
+
+        self._last_real_score = list(puntuacio_real)
+
+        # 2. CANVI DE MÀ: Alliberem punts i netegem per a la nova mà
+        if self._last_ma_for_log != -1 and ma_actual != self._last_ma_for_log:
+            # Abans de netejar, fem un darrer bake amb el que s'acaba de tancar
+            hist_complet = state.get("hist_cartes", []) + state.get("hist_cartes_ant", [])
+            self._bake_log_cards(hist_complet, self._last_ma_for_log)
+            
+            for equip, pts, motiu in self._queued_points:
+                msg = f"Equip {equip} guanya {pts} pts ({motiu})"
+                if not self._action_log or self._action_log[-1][2] != msg:
+                    self._action_log.append((-1, "SISTEMA", msg))
+                self._visual_score[equip] += pts
+            self._queued_points = []
+
+        # Missatge de Nova Mà (un sol cop)
+        if ma_actual != self._last_ma_for_log:
+            msg_ma = f"--- Nova Mà {ma_actual + 1} ---"
+            if not self._action_log or self._action_log[-1][2] != msg_ma:
+                self._action_log.append((-1, "SISTEMA", msg_ma))
+            self._last_ma_for_log = ma_actual
+            
+        # 3. CANVI DE RONDA: Separador visual al log
+        ronda_actual = state.get("comptador_ronda", 0)
+        if (ronda_actual != self._last_ronda_for_log and 
+            self._last_ma_for_log != -1 and
+            ronda_actual > 0):
+            
+            msg_ronda = f"---- Nova Ronda {ronda_actual + 1} ----"
+            if not self._action_log or self._action_log[-1][2] != msg_ronda:
+                 self._action_log.append((-1, "SISTEMA", msg_ronda))
+            
+        self._last_ronda_for_log = ronda_actual
+
+        # 4. Sincronitzar noms de cartes (Baking)
+        self._bake_log_cards(state.get("hist_cartes", []), ma_actual)
+
+        # 4. UI amb els punts visuals (retinguts)
+        state_for_ui = state.copy()
+        state_for_ui["puntuacio"] = list(self._visual_score)
+        
+        self._last_state = state
         self._clear()
         root = self._root
 
-        fase_torn = state.get("fase_torn", 2)
-        id_jugador = state.get("id_jugador", 0)
-        ma_jugador = state.get("ma_jugador", [])
-        puntuacio = state.get("puntuacio", [0, 0])
-        comptador_ronda = state.get("comptador_ronda", 0)
-        ma = state.get("ma", 0)
-        hist_cartes = state.get("hist_cartes", [])
-        hist_senyes = state.get("hist_senyes", [])
-        estat_truc = state.get("estat_truc", {})
-        estat_envit = state.get("estat_envit", {})
+        fase_torn = state_for_ui.get("fase_torn", 1)
+        id_jugador = state_for_ui.get("id_jugador", 0)
+        ma_jugador = state_for_ui.get("ma_jugador", [])
+        puntuacio = state_for_ui.get("puntuacio", [0, 0])
+        comptador_ronda = state_for_ui.get("comptador_ronda", 0)
+        ma = state_for_ui.get("ma", 0)
+        hist_cartes = state_for_ui.get("hist_cartes", [])
+        hist_senyes = state_for_ui.get("hist_senyes", [])
+        estat_truc = state_for_ui.get("estat_truc", {})
+        estat_envit = state_for_ui.get("estat_envit", {})
 
-        num_jugadors = state.get("num_jugadors", self._config.get("num_jugadors", 2))
+        num_jugadors = state_for_ui.get("num_jugadors", self._config.get("num_jugadors", 2))
         dors_img = self._get_dors_image()
-        is_fase_cartes = fase_torn == 2
+        is_fase_cartes = fase_torn == 1
 
         # Panell d'accions (o "Esperant..." en mode només lectura)
-        BOTTOM_BAR_H = 64
+        BOTTOM_BAR_H = 85
         bottom_bar = tk.Frame(root, bg=BG_PANEL, padx=10, pady=8, height=BOTTOM_BAR_H)
         bottom_bar.pack(side="bottom", fill="x")
         bottom_bar.pack_propagate(False)
@@ -272,12 +349,31 @@ class VistaDesktop:
                 label = ACCIONS_CAT[action_id] if action_id < len(ACCIONS_CAT) else f"Acció {action_id}"
                 tecla = ACCIO_TECLA.get(action_id, "")
                 is_play = action_id <= 2
+                
                 if is_play and action_id < len(ma_jugador):
-                    label = f"Carta {action_id + 1} ({ma_jugador[action_id]})"
                     tecla = str(action_id + 1)
+                    if tecla:
+                        key_to_action[tecla] = action_id
+                    continue 
+
+                # Noms dinàmics per Apostes
+                if action_id == 3: # Apostar envit
+                    lvl = estat_envit.get("level", 0)
+                    if lvl == 0: label = "Envit"
+                    elif lvl == 2: label = "Tornar-hi"
+                    elif lvl == 4: label = "Dos més"
+                    elif lvl >= 6: label = "Falta"
+                    
+                elif action_id == 4: # Apostar truc
+                    lvl = estat_truc.get("level", 1)
+                    if lvl == 1: label = "Truc"
+                    elif lvl == 3: label = "Retruc"
+                    elif lvl == 6: label = "Val Nou"
+                    elif lvl >= 9: label = "Joc Fora"
+
                 b = tk.Button(
                     btn_frame, text=label + (f"  [{tecla.upper()}]" if tecla else ""),
-                    bg=BG_BTN_CARD if is_play else BG_BTN, fg="white",
+                    bg=BG_BTN, fg="white",
                     relief="flat", padx=12, pady=8, font=("", 10, "bold"),
                     cursor="hand2", command=lambda a=action_id: self._submit_action(a),
                 )
@@ -286,7 +382,7 @@ class VistaDesktop:
                     key_to_action[tecla] = action_id
             if is_fase_cartes:
                 tk.Label(bottom_bar, text="Clica una carta o prem 1, 2, 3",
-                         bg=BG_PANEL, fg="#888", font=("", 9)).pack(pady=(4, 0))
+                         bg=BG_PANEL, fg="#aaa", font=("", 9)).pack(pady=(4, 0))
 
         # Contingut principal
         content = tk.Frame(root, bg=BG)
@@ -295,7 +391,7 @@ class VistaDesktop:
         table_frame = tk.Frame(content, bg=BG_TABLE, padx=12, pady=12)
         table_frame.pack(side="left", fill="both", expand=True)
 
-        log_panel = tk.Frame(content, bg=BG_PANEL, width=220, padx=8, pady=10)
+        log_panel = tk.Frame(content, bg=BG_PANEL, width=300, padx=8, pady=10)
         log_panel.pack(side="right", fill="y")
         log_panel.pack_propagate(False)
 
@@ -316,7 +412,10 @@ class VistaDesktop:
                      font=("", 11)).pack(side="left")
 
         def cards_count(pid):
-            n = sum(1 for (p, _) in hist_cartes if p == pid)
+            n = 0
+            for entry in hist_cartes:
+                if entry[0] == pid:
+                    n += 1
             return max(0, 3 - n)
 
         def columna_altre(parent, pid, etiqueta, pack_side="left"):
@@ -325,12 +424,18 @@ class VistaDesktop:
             tk.Label(f, text=etiqueta, bg=BG_TABLE, fg=FG_DIM, font=("", 10)).pack()
             hand_f = tk.Frame(f, bg=BG_TABLE)
             hand_f.pack(pady=2)
-            for _ in range(cards_count(pid)):
-                if dors_img:
-                    tk.Label(hand_f, image=dors_img, bg=BG_TABLE).pack(side="left", padx=2)
+            
+            n_restants = cards_count(pid)
+            for i in range(3):
+                if i < n_restants:
+                    if dors_img:
+                        tk.Label(hand_f, image=dors_img, bg=BG_TABLE).pack(side="left", padx=2)
+                    else:
+                        tk.Label(hand_f, text="?", bg="#2d5a30", fg=FG_DIM,
+                                 width=6, height=4, relief="ridge").pack(side="left", padx=2)
                 else:
-                    tk.Label(hand_f, text="?", bg="#2d5a30", fg=FG_DIM,
-                             width=6, height=4, relief="ridge").pack(side="left", padx=2)
+                    # Espai reservat per a les cartes que ja han estat jugades
+                    tk.Frame(hand_f, width=CARD_W, height=CARD_H, bg=BG_TABLE).pack(side="left", padx=2)
             return f
 
         if num_jugadors == 2:
@@ -352,11 +457,19 @@ class VistaDesktop:
             columna_altre(fila_rivals, p_dreta, f"Rival (J{p_dreta})", pack_side="right")
 
         # Centre: cartes jugades
-        cartes_per_mostrar = list(hist_cartes)
+        hist_cartes_estat = state.get("hist_cartes", [])
+        cartes_per_mostrar = list(hist_cartes_estat)
 
         piles = {}
-        for pid, card in cartes_per_mostrar:
-            piles.setdefault(pid, []).append(card)
+        counts_for_piles = {}
+        for entry in cartes_per_mostrar:
+            if len(entry) == 3:
+                pid, r, card = entry
+            else:
+                pid, card = entry
+                r = counts_for_piles.get(pid, 0)
+                counts_for_piles[pid] = r + 1
+            piles.setdefault(pid, {})[r] = card
 
         center_box = tk.Frame(table_frame, bg="#0d2a0e", relief="ridge", bd=2, padx=8, pady=6)
         center_box.pack(pady=6, fill="x")
@@ -365,47 +478,52 @@ class VistaDesktop:
 
         LBL_H = 18
         ordered_pids = [id_jugador] + [p for p in range(num_jugadors) if p != id_jugador]
+        
+        # Mida fixa d'alçada asssumint que sempre s'hi poden col·locar 3 cartes
+        STEP_Y = 40
+        max_cards_visuals = 3
+        canvas_h = LBL_H + (max_cards_visuals - 1) * STEP_Y + CARD_H + 4
+        
+        canvas = tk.Canvas(center_box, bg="#0d2a0e", highlightthickness=0, height=canvas_h)
+        canvas.pack(fill="x")
 
-        if not cartes_per_mostrar:
-            row_labels = tk.Frame(center_box, bg="#0d2a0e")
-            row_labels.pack(fill="x")
-            for pid in ordered_pids:
-                tk.Label(row_labels, text=f"J{pid}", bg="#0d2a0e", fg="#9aca9a",
-                         font=("", 9, "bold")).pack(side="left", expand=True)
-            tk.Label(center_box, text="—", bg="#0d2a0e", fg=FG_DIM, font=("", 11)).pack()
-        else:
-            STEP_Y = 25
-            max_cards = max(len(v) for v in piles.values()) if piles else 1
-            canvas_h = LBL_H + (max_cards - 1) * STEP_Y + CARD_H + 4
-            canvas = tk.Canvas(center_box, bg="#0d2a0e",
-                               highlightthickness=0, height=canvas_h)
-            canvas.pack(fill="x")
+        def _place_piles(event=None):
+            w = canvas.winfo_width()
+            if w < 10: w = 400
+            slot_w = w // num_jugadors
+            for wid in canvas.find_all():
+                canvas.delete(wid)
+            for col, pid in enumerate(ordered_pids):
+                cx = slot_w * col + slot_w // 2
+                
+                # cards_by_round és un dict {ronda: carta}
+                cards_by_round = piles.get(pid, {})
+                
+                # Etiqueta de la columna (nom jugador)
+                lbl = tk.Label(canvas, text=f"J{pid}", bg="#0d2a0e", fg="#9aca9a", font=("", 9, "bold"))
+                canvas.create_window(cx, 0, window=lbl, anchor="n")
+                
+                if not cards_by_round and not cartes_per_mostrar:
+                    # En cas que estiguem a ronda 0 inici, mostrem un guió sota el text
+                    if col == 0:
+                        guio = tk.Label(canvas, text="—", bg="#0d2a0e", fg=FG_DIM, font=("", 11))
+                        canvas.create_window(w // 2, LBL_H + max_cards_visuals * STEP_Y // 2, window=guio, anchor="center")
+                    
+                for r in range(3): # Mostrar les 3 rondes possibles
+                    card = cards_by_round.get(r)
+                    if not card: continue
+                    
+                    cf = tk.Frame(canvas, bg="#0d2a0e")
+                    img = self._get_card_image(card)
+                    if img:
+                        tk.Label(cf, image=img, bg="#0d2a0e").pack()
+                    else:
+                        tk.Label(cf, text=card, bg="#2d5a30", fg=FG, width=8, height=5, relief="ridge").pack()
+                    # Aquí la 'r' (ronda) ens serveix per situar la carta en la seva vertical correcta
+                    canvas.create_window(cx, LBL_H + r * STEP_Y, window=cf, anchor="n")
 
-            def _place_piles(event=None):
-                w = canvas.winfo_width()
-                if w < 10:
-                    w = 400
-                slot_w = w // num_jugadors
-                for wid in canvas.find_all():
-                    canvas.delete(wid)
-                for col, pid in enumerate(ordered_pids):
-                    cx = slot_w * col + slot_w // 2
-                    cards = piles.get(pid, [])
-                    lbl = tk.Label(canvas, text=f"J{pid}", bg="#0d2a0e",
-                                   fg="#9aca9a", font=("", 9, "bold"))
-                    canvas.create_window(cx, 0, window=lbl, anchor="n")
-                    for j, card in enumerate(cards):
-                        cf = tk.Frame(canvas, bg="#0d2a0e")
-                        img = self._get_card_image(card)
-                        if img:
-                            tk.Label(cf, image=img, bg="#0d2a0e").pack()
-                        else:
-                            tk.Label(cf, text=card, bg="#2d5a30", fg=FG,
-                                     width=8, height=5, relief="ridge").pack()
-                        canvas.create_window(cx, LBL_H + j * STEP_Y, window=cf, anchor="n")
-
-            canvas.bind("<Configure>", _place_piles)
-            canvas.after(10, _place_piles)
+        canvas.bind("<Configure>", _place_piles)
+        canvas.after(10, _place_piles)
 
         # Senyes d'aquesta mà
         if self._config.get("senyes", False) and hist_senyes:
@@ -413,13 +531,13 @@ class VistaDesktop:
             senyes_box.pack(pady=4, fill="x")
             tk.Label(senyes_box, text="Senyes d'aquesta mà", bg="#1a2d1a", fg="#7ab87a",
                      font=("", 10, "bold")).pack(pady=(0, 4))
-            for pid, action_str in hist_senyes:
+            for pid, r, action_str in hist_senyes:
                 try:
                     idx = ACTION_LIST.index(action_str)
                     nom_senya = ACCIONS_CAT[idx] if idx < len(ACCIONS_CAT) else action_str
                 except (ValueError, IndexError):
                     nom_senya = action_str
-                tk.Label(senyes_box, text=f"Jugador {pid}: {nom_senya}", bg="#1a2d1a", fg=FG,
+                tk.Label(senyes_box, text=f"R{r+1} J{pid}: {nom_senya}", bg="#1a2d1a", fg=FG,
                          font=("", 10)).pack(anchor="w")
 
         # Puntuació
@@ -468,12 +586,16 @@ class VistaDesktop:
         if self._action_log:
             for pid, nom, act in self._action_log:
                 log_text.config(state="normal")
-                try:
-                    idx = ACTION_LIST.index(act)
-                    act_visible = ACCIONS_CAT[idx] if idx < len(ACCIONS_CAT) else act
-                except (ValueError, IndexError):
-                    act_visible = act
-                log_text.insert("end", f"Jugador {pid} ({nom}): {act_visible}\n")
+                if pid == -1: # Missatge de sistema (punts, canvi de mà)
+                    log_text.insert("end", f"{act}\n", "sistema")
+                    log_text.tag_config("sistema", foreground="#d0a040", font=("", 10, "italic"))
+                else:
+                    try:
+                        idx = ACTION_LIST.index(act)
+                        act_visible = ACCIONS_CAT[idx] if idx < len(ACCIONS_CAT) else act
+                    except (ValueError, IndexError):
+                        act_visible = act
+                    log_text.insert("end", f"J{pid} ({nom}): {act_visible}\n")
                 log_text.config(state="disabled")
             log_text.see("end")
         else:
@@ -495,14 +617,32 @@ class VistaDesktop:
 
 
     # mostrar_*
+    # mostrar_*
     def mostrar_accio(self, jugador_id: int, nom_accio: str, es_bot: bool) -> None:
         prefix = "Bot" if es_bot else "Tu"
-        self._action_log.append((jugador_id, prefix, nom_accio))
+        nom_contextual = nom_accio
+        
+        if hasattr(self, '_last_state'):
+            if nom_accio == "apostar_envit":
+                lvl = self._last_state.get("estat_envit", {}).get("level", 0)
+                if lvl == 0: nom_contextual = "Envit"
+                elif lvl == 2: nom_contextual = "Tornar-hi"
+                elif lvl == 4: nom_contextual = "Dos més"
+                elif lvl >= 6: nom_contextual = "Falta"
+            elif nom_accio == "apostar_truc":
+                lvl = self._last_state.get("estat_truc", {}).get("level", 1)
+                if lvl == 1: nom_contextual = "Truc"
+                elif lvl == 3: nom_contextual = "Retruc"
+                elif lvl == 6: nom_contextual = "Val Nou"
+                elif lvl >= 9: nom_contextual = "Joc Fora"
+
+        self._action_log.append((jugador_id, prefix, nom_contextual))
         if es_bot:
             time.sleep(self.BOT_DELAY_S)
 
     def mostrar_fi_partida(self, score: list, payoffs: list) -> None:
         self._schedule(self._build_game_over, score, payoffs)
+        self._wait() # Esperar que l'usuari tanqui o vulgui sortir
 
     def _build_game_over(self, score, payoffs):
         self._clear()
@@ -513,7 +653,11 @@ class VistaDesktop:
         tk.Label(f, text=f"E0: {score[0]}  —  E1: {score[1]}",
                  font=("", 15), bg=BG_PANEL, fg=FG).pack()
         tk.Label(f, text=f"Payoffs: {payoffs}",
-                 font=("", 11), bg=BG_PANEL, fg="#aaa").pack(pady=(4, 0))
+                 font=("", 11), bg=BG_PANEL, fg="#aaa").pack(pady=(4, 16))
+        
+        tk.Button(f, text="Tancar", bg=BG_BTN, fg="white",
+                  relief="flat", padx=14, pady=6, font=("", 11, "bold"),
+                  command=lambda: self._submit_action(None)).pack()
 
     def demanar_repetir(self) -> bool:
         self._schedule(self._build_repeat_ui)
@@ -537,6 +681,74 @@ class VistaDesktop:
     def _set_repeat(self, val):
         self._result = val
         self._event.set()
+
+    def _card_to_name(self, code):
+        """Tradueix un codi de carta (ex: S1) a un nom llegible (ex: As Espases)."""
+        if not code or not isinstance(code, str) or len(code) < 2:
+            return str(code)
+        pal_code = code[0]
+        num_code = code[1:]
+        
+        pals = {'S': 'Espases', 'C': 'Copes', 'O': 'Oros', 'B': 'Bastos'}
+        p = pals.get(pal_code, pal_code)
+        
+        n_map = {'1': 'As', '12': 'Rei'}
+        n = n_map.get(num_code, num_code)
+        
+        return f"{n} {p}"
+
+    def _bake_log_cards(self, hist_cartes, ma_actual):
+        """
+        Sincronitza els placeholders "play_card_X" del log amb els noms reals
+        de les cartes extrets de l'historial de la mà corresponent.
+        """
+        if not self._action_log: return
+
+        # 1. Trobar on comencen les accions de la mà actual al log
+        # Busquem l'últim separador de "Nova Mà [ma_actual+1]"
+        start_idx = 0
+        tag_buscat = f"--- Nova Mà {ma_actual + 1}"
+        for i in range(len(self._action_log)-1, -1, -1):
+             if self._action_log[i][0] == -1 and tag_buscat in self._action_log[i][2]:
+                 start_idx = i + 1
+                 break
+        
+        # 2. Mapejar pids -> llista de cartes jugades en aquesta mà segons hist_cartes
+        cards_by_pid = {}
+        # Filtrem nomes les cartes de la mà actual si hist_cartes les inclou de mans anteriors 
+        for entry in hist_cartes:
+            if len(entry) == 3:
+                p, r, c = entry
+            else:
+                p, c = entry
+            cards_by_pid.setdefault(p, []).append(c)
+            
+        # 3. Recórrer el log des de start_idx i traduir si cal
+        counts = {}
+        for i in range(start_idx, len(self._action_log)):
+            pid, nom, act = self._action_log[i]
+            if pid == -1: continue
+            
+            # Normalitzem per si el text ja ha estat tocat pel diccionari de traduccions UI
+            # IMPORTANT: També hem de detectar les línies que JA HEM BAKED ("Tira el")
+            # perquè el comptador (occ) no perdi el compte de quantes cartes portem.
+            act_str = str(act)
+            is_play = (act_str.startswith("play_card_") or 
+                      "Jugar carta" in act_str or 
+                      act_str.startswith("Tira el"))
+            
+            if is_play:
+                occ = counts.get(pid, 0)
+                counts[pid] = occ + 1
+                
+                # Si encara és un placeholder de codi, el "forgem" (bake) amb el nom real
+                # O si és el text genèric "Jugar carta X"
+                if pid in cards_by_pid and occ < len(cards_by_pid[pid]):
+                    card_code = cards_by_pid[pid][occ]
+                    card_name = self._card_to_name(card_code)
+                    new_text = f"Tira el {card_name}"
+                    if self._action_log[i][2] != new_text:
+                        self._action_log[i] = (pid, nom, new_text)
 
     def mostrar_sortint(self) -> None:
         if self._root:

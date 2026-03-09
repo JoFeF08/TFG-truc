@@ -55,6 +55,7 @@ cover/
 .venv
 env/
 venv/
+.venv_uib/
 ENV/
 env.bak/
 venv.bak/
@@ -63,7 +64,11 @@ venv.bak/
 doc/temp
 referencies/temp
 dades_partides/
-entrenament/registres/
+entrenament/entrenamentRLCard/registres/
+!entrenament/entrenamentRLCard/registres/05_03_26_a_les_0054/models/dqn_truc.pt
+entrenament/entrenamentEstatTruc/registres/
+!entrenament/entrenamentEstatTruc/registres/05_03_26_a_les_0015/models/best_pesos_cos_truc.pth
+entrenament/entrenamentsUnificats/registres/
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/

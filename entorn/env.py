@@ -2,7 +2,11 @@ import numpy as np
 from collections import OrderedDict
 from rlcard.envs import Env
 from entorn.game import TrucGame
-from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL, init_joc_cartes
+from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL, PALS, NUMS, init_joc_cartes
+
+# Mapeig de pal i rang a índex de fila/columna en el tensor de cartes (6×4×9)
+_PAL_IDX = {p: i for i, p in enumerate(PALS)}   # {'S':0, 'C':1, 'O':2, 'B':3}
+_NUM_IDX = {n: i for i, n in enumerate(NUMS)}    # {'1':0,'3':1,'4':2,...,'12':8}
 
 class TrucEnv(Env):
     """
@@ -36,98 +40,128 @@ class TrucEnv(Env):
         config.setdefault('seed', None)
         super().__init__(config)
         
+        self.reward_beta = 0.5  # Valor inicial per defecte
+        
         self.cartes = init_joc_cartes()
         self.carta_map = {carta: i for i, carta in enumerate(self.cartes)}
         self.signal_map = {signal: i for i, signal in enumerate(ACTIONS_SIGNAL)}
 
-        # espai d'estat
-        self.num_cartes = len(self.cartes)
-        self.espai_joc_cartes = self.num_cartes + 1 # carta buida
-        self.espai_hist_cartes = self.num_jugadors * self.cartes_jugador 
-        
-        self.espai_senya = len(ACTIONS_SIGNAL) + 1
-        if senyes:
-            self.espai_hist_senyes = self.num_jugadors * self.cartes_jugador
-        else:
-            self.espai_hist_senyes = 0
+        # Format multi-entrada
+        # obs_cartes: (6 canals, 4 pals, 9 rangs)
+        # obs_context: (17,) — informació contextual
+        self.OBS_CARTES_SHAPE = (6, 4, 9)
+        self.OBS_CONTEXT_SIZE = 17
 
-
-        self.espai_info_publica = 10
-        self.state_size = (self.cartes_jugador * self.espai_joc_cartes) + \
-                          (self.espai_hist_cartes * self.espai_joc_cartes) + \
-                          (self.espai_hist_senyes * self.espai_senya) + \
-                          self.espai_info_publica
-                          
-        
+        # state_size i state_shape per compatibilitat amb RLCard
+        self.state_size = (
+            self.OBS_CARTES_SHAPE[0] * self.OBS_CARTES_SHAPE[1] * self.OBS_CARTES_SHAPE[2]
+            + self.OBS_CONTEXT_SIZE
+        )  # 6*4*9 + 17 = 233
         self.state_shape = [[self.state_size] for _ in range(self.num_jugadors)]
         self.action_shape = [[len(ACTION_LIST)] for _ in range(self.num_jugadors)]
 
+    def _carta_a_idx(self, carta_str):
+        pal = carta_str[0]
+        rang = carta_str[1:]
+        return _PAL_IDX.get(pal), _NUM_IDX.get(rang)
+
     def _extract_state(self, state):
-        obs = np.zeros(self.state_size, dtype=np.int8)
-        idx = 0
-        
-        #mà
-        ma_jugador = state['ma_jugador']
+        """
+        Extreu l'estat del joc en format multi-entrada per a la xarxa neuronal
 
-        for i in range(self.cartes_jugador):
-            if i < len(ma_jugador):
-                card_str = ma_jugador[i]
-                if card_str in self.carta_map:
-                    card_idx = self.carta_map[card_str]
-                    obs[idx + card_idx] = 1
+        Retorna un diccionari 'obs' amb:
+          - 'obs_cartes'  : np.ndarray (6, 4, 9) float32
+          - 'obs_context' : np.ndarray (17,)     float32
+        """
+        player_id = state['id_jugador']
+        n = self.num_jugadors
+
+        # Tensor de cartes (6 canals × 4 pals × 9 rangs)
+        obs_cartes = np.zeros(self.OBS_CARTES_SHAPE, dtype=np.float32)
+
+        def _marca_carta(canal, carta_str):
+            f, c = self._carta_a_idx(carta_str)
+            if f is not None and c is not None:
+                obs_cartes[canal, f, c] = 1.0
+
+        # Canal 0: Mà actual del jugador
+        for carta in state['ma_jugador']:
+            _marca_carta(0, carta)
+
+        # Canals 1-4: Historial de cartes
+        # Canal 1 = el propi jugador, Canal 2 = Rival 1, Canal 3 = Company, Canal 4 = Rival 2
+        canal_per_jugador = {}
+        for offset, canal in enumerate([1, 2, 3, 4]):
+            pid = (player_id + offset) % n
+            canal_per_jugador[pid] = canal
+
+        for entrada in state['hist_cartes']:
+            if len(entrada) == 3:
+                pid, ronda, carta = entrada
             else:
-                obs[idx + self.num_cartes] = 1 # simbol per buit
-            idx += self.espai_joc_cartes
+                pid, carta = entrada
+            canal = canal_per_jugador.get(pid)
+            if canal is not None:
+                _marca_carta(canal, carta)
 
-        #Historials
-        hist_cartes = state['hist_cartes']
-        for i in range(self.espai_hist_cartes):
-            if i < len(hist_cartes):
-                _, card_str = hist_cartes[i] # (pid, card)
-                if card_str in self.carta_map:
-                    card_idx = self.carta_map[card_str]
-                    obs[idx + card_idx] = 1
-            else:
-                obs[idx + self.num_cartes] = 1 # Slot buit
-            idx += self.espai_joc_cartes
-            
-        if self.espai_hist_senyes > 0:
-            signals = state.get('hist_senyes', [])
-            for i in range(self.espai_hist_senyes):
-                if i < len(signals):
-                    _, signal_str = signals[i]
-                    if signal_str in self.signal_map:
-                        sig_idx = self.signal_map[signal_str]
-                        obs[idx + sig_idx] = 1
-                else:
-                    obs[idx + len(ACTIONS_SIGNAL)] = 1 # Slot buit
-                idx += self.espai_senya
+        # Canal 5: Cartes assenyalades per les senyes del company
+        company_pid = (player_id + 2) % n
+        SENYA_CARTA_MAP = {
+            'senya_onze_bastos':    'B11',
+            'senya_deu_ors':        'O10',
+            'senya_as_espases':     'S1',
+            'senya_as_bastos':      'B1',
+            'senya_manilla_espases':'S7',
+            'senya_manilla_ors':    'O7',
+            'senya_tres':           None,
+            'senya_as_bord':        None,
+            'senya_cegas':          None,
+        }
+        for pid, ronda, senya in state.get('hist_senyes', []):
+            if pid == company_pid:
+                carta_senya = SENYA_CARTA_MAP.get(senya)
+                if carta_senya:
+                    _marca_carta(5, carta_senya)
 
-        #Info pública
-        obs[idx] = state['puntuacio'][0]; idx += 1
-        obs[idx] = state['puntuacio'][1]; idx += 1
-        
-        #apostes
-        obs[idx] = state['estat_truc']['level']; idx += 1
-        obs[idx] = state['estat_truc']['owner'] + 1; idx += 1 # 0=Ningú, 1=P0, 2=P1
-        
-        obs[idx] = state['estat_envit']['level']; idx += 1
-        obs[idx] = state['estat_envit']['owner'] + 1; idx += 1
-        
-        #situacio
-        obs[idx] = state['fase_torn']; idx += 1
-        obs[idx] = state['ma']; idx += 1
-        obs[idx] = state['comptador_ronda']; idx += 1
-        
-        obs[idx] = state['id_jugador']; idx += 1
+        # Vector de context
+        obs_context = np.zeros(self.OBS_CONTEXT_SIZE, dtype=np.float32)
 
-        #accions legals
+        equip_propi = player_id % 2
+        equip_rival = 1 - equip_propi
+
+        obs_context[0] = state['puntuacio'][equip_propi] / 24.0
+        obs_context[1] = state['puntuacio'][equip_rival] / 24.0
+        obs_context[2] = state['estat_truc']['level'] / 24.0
+        obs_context[3] = state['estat_envit']['level'] / 24.0
+        obs_context[4] = state['fase_torn']                             # max=1 (2 fases: 0 i 1)
+        obs_context[5] = state['comptador_ronda'] / self.cartes_jugador  # max=cartes_jugador
+
+        # [6-9] One-hot relatiu: qui és "mà"
+        ma_offset = (state['ma'] - player_id) % n
+        if ma_offset < 4:
+            obs_context[6 + ma_offset] = 1.0
+
+        # [10-13] One-hot relatiu: qui ha cantat el Truc
+        truc_owner = state['estat_truc']['owner']
+        if truc_owner != -1:
+            truc_offset = (truc_owner - player_id) % n
+            if truc_offset < 4:
+                obs_context[10 + truc_offset] = 1.0
+
+        # [14-16] One-hot relatiu: qui ha cantat l'Envit
+        envit_owner = state['estat_envit']['owner']
+        if envit_owner != -1:
+            envit_offset = (envit_owner - player_id) % n
+            if envit_offset < 3:
+                obs_context[14 + envit_offset] = 1.0
+
+        # Accions legals
         legal_actions_list = state['accions_legals']
         legal_actions = OrderedDict({a: None for a in legal_actions_list})
-        
-        # Construir l'objecte d'estat final per a l'agent
+
+        # Estat final per a l'agent
         extracted_state = {
-            'obs': obs,
+            'obs': {'obs_cartes': obs_cartes, 'obs_context': obs_context},
             'legal_actions': legal_actions,
             'raw_obs': state,
             'raw_legal_actions': [ACTION_LIST[a] for a in legal_actions_list],
@@ -135,17 +169,12 @@ class TrucEnv(Env):
         }
         return extracted_state
 
+    def set_reward_beta(self, beta):
+        self.reward_beta = beta
+        self.game.set_reward_beta(beta)
+
     def get_payoffs(self):
-        score    = self.game.score
-        objectiu = self.game.puntuacio_final
-        payoffs  = []
-
-        for pid in range(self.num_jugadors):
-            oponent = 1 - pid
-            diff = (score[pid] - score[oponent]) / objectiu
-            payoffs.append(diff)
-
-        return payoffs
+        return self.game.get_payoffs()
 
     def get_estat_taula(self, player_id):
         """
