@@ -23,5 +23,9 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
     if tipus == "dqn":
         from models.adapters.rlcard_model import _crear_dqn
         return _crear_dqn(spec, env_config)
+        
+    if tipus == "numpy_dqn":
+        from models.numpy_agent import _crear_numpy_dqn
+        return _crear_numpy_dqn(spec, env_config)
 
     return None

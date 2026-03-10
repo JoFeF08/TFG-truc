@@ -42,16 +42,16 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\entrenamentsUnificats\registres\resultats_comparativa\dqn_finetune_0803_0024\models\best.pt"
+DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\models\best.npz"
 
 is_frozen = getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')
 
 if is_frozen:
-    MODEL_PATH = resource_path(os.path.join("models", "best.pt"))
-    TIPUS_AGENT = "dqn"
+    MODEL_PATH = resource_path(os.path.join("models", "best.npz"))
+    TIPUS_AGENT = "numpy_dqn"
 else:
     MODEL_PATH = DEFAULT_MODEL_PATH
-    TIPUS_AGENT = "dqn"
+    TIPUS_AGENT = "numpy_dqn"
 
 config = {
     "num_jugadors": 2,
