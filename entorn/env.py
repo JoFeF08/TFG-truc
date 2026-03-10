@@ -1,6 +1,6 @@
 import numpy as np
 from collections import OrderedDict
-from rlcard.envs import Env
+from rlcard.envs.env import Env
 from entorn.game import TrucGame
 from entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL, PALS, NUMS, init_joc_cartes
 

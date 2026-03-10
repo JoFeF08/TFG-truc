@@ -46,7 +46,7 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     """
     import torch
     import copy
-    from rlcard.agents import NFSPAgent
+    from rlcard.agents.nfsp_agent import NFSPAgent
     from models.xarxa_unificada import XarxaUnificada
 
     ruta = spec["ruta"]
@@ -97,7 +97,7 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     """
     import torch
     import copy
-    from rlcard.agents import DQNAgent
+    from rlcard.agents.dqn_agent import DQNAgent
     from models.xarxa_unificada import XarxaUnificada
 
     ruta = spec["ruta"]
