@@ -65,11 +65,11 @@ venv.bak/
 doc/temp
 referencies/temp
 dades_partides/
-entrenament/entrenamentRLCard/registres/
-!entrenament/entrenamentRLCard/registres/05_03_26_a_les_0054/models/dqn_truc.pt
-entrenament/entrenamentEstatTruc/registres/
-!entrenament/entrenamentEstatTruc/registres/05_03_26_a_les_0015/models/best_pesos_cos_truc.pth
-entrenament/entrenamentsUnificats/registres/
+RL/entrenament/entrenamentRLCard/registres/
+!RL/entrenament/entrenamentRLCard/registres/05_03_26_a_les_0054/models/dqn_truc.pt
+RL/entrenament/entrenamentEstatTruc/registres/
+!RL/entrenament/entrenamentEstatTruc/registres/05_03_26_a_les_0015/models/best_pesos_cos_truc.pth
+RL/entrenament/entrenamentsUnificats/registres/
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/

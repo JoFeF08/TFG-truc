@@ -18,8 +18,8 @@ try:
 except Exception:
     pass
 
-from controlador import Controlador, ModelInteractiu
-from vista.vista_desktop.vista_desktop import VistaDesktop
+from joc.controlador import Controlador, ModelInteractiu
+from joc.vista.vista_desktop.vista_desktop import VistaDesktop
 
 import sys
 import os
@@ -42,12 +42,12 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\models\best.npz"
+DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\RL\models\best.npz"
 
 is_frozen = getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')
 
 if is_frozen:
-    MODEL_PATH = resource_path(os.path.join("models", "best.npz"))
+    MODEL_PATH = resource_path(os.path.join("RL", "models", "best.npz"))
     TIPUS_AGENT = "numpy_dqn"
 else:
     MODEL_PATH = DEFAULT_MODEL_PATH
