@@ -1,18 +1,3 @@
-# ---------------------------------------------------------------------------
-# Nuitka onefile: registrar el directori d'extracció com a DLL search path.
-# En Python 3.8+ (Windows), la cerca de DLLs és restrictiva.
-# Nuitka extreu les DLLs (onnxruntime.dll) a l'arrel del directori temporal,
-# però el .pyd queda a onnxruntime/capi/. Sense add_dll_directory, el .pyd
-# no pot trobar onnxruntime.dll → ImportError.
-# Cal fer-ho ABANS de qualsevol import que pugui carregar onnxruntime.
-# ---------------------------------------------------------------------------
-import os
-import sys
-
-if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
-    _base = os.path.dirname(os.path.abspath(__file__))
-    os.add_dll_directory(_base)
-
 import importlib
 try:
     import rlcard.envs.registration
@@ -40,25 +25,24 @@ import sys
 import os
 
 def resource_path(relative_path):
-    """
-    Get absolute path to resource.
-    - PyInstaller onefile: usa sys._MEIPASS (directori d'extracció temporal)
-    - Nuitka onefile:      usa __file__ (apunta al directori d'extracció de Nuitka)
-    - Desenvolupament:     usa el directori del propi script
-    """
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller onefile
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
         base_path = sys._MEIPASS
-    else:
-        # Nuitka onefile/standalone i mode desenvolupament.
-        # En Nuitka compilat, __file__ apunta al directori d'extracció temporal.
-        # En dev, apunta al directori del script.
-        base_path = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
 
-MODEL_PATH = resource_path(os.path.join("models", "best.onnx"))
-TIPUS_AGENT = "onnx"
+DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\entrenament\entrenamentsUnificats\registres\resultats_comparativa\dqn_finetune_0803_0024\models\best.pt"
+
+is_frozen = getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')
+
+if is_frozen:
+    MODEL_PATH = resource_path(os.path.join("models", "best.onnx"))
+    TIPUS_AGENT = "onnx"
+else:
+    MODEL_PATH = DEFAULT_MODEL_PATH
+    TIPUS_AGENT = "dqn"
 
 config = {
     "num_jugadors": 2,

@@ -16,6 +16,21 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
     if tipus in ("huma", "default"):
         return None
 
+    import sys
+    is_frozen = getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')
+
+    if tipus == "nfsp":
+        if is_frozen:
+             raise ImportError("NFSP (Torch) no s'ha d'usar en mode frozen. Usa l'adaptador ONNX.")
+        from models.adapters.rlcard_model import _crear_nfsp
+        return _crear_nfsp(spec, env_config)
+
+    if tipus == "dqn":
+        if is_frozen:
+             raise ImportError("DQN (Torch) no s'ha d'usar en mode frozen. Usa l'adaptador ONNX.")
+        from models.adapters.rlcard_model import _crear_dqn
+        return _crear_dqn(spec, env_config)
+
     ruta = spec.get("ruta")
     if tipus == "onnx" or (ruta and ruta.lower().endswith(".onnx")):
         from models.adapters.onnx_model import ONNXModelAdapter

@@ -4,10 +4,24 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+import os
+import sys
 
 from entorn.cartes_accions import ACTION_LIST
 
-_IMG_DIR = Path(__file__).resolve().parent / "img_iu" / "cartesSeparades"
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    # Try current directory first, but if it exists in _MEIPASS it wins
+    return Path(os.path.join(base_path, relative_path))
+
+# Imatges de la interfície: vista/vista_desktop/img_iu/cartesSeparades
+_IMG_DIR = resource_path(os.path.join("vista", "vista_desktop", "img_iu", "cartesSeparades"))
 
 ACCIONS_CAT = [
     "Jugar carta 1", "Jugar carta 2", "Jugar carta 3",

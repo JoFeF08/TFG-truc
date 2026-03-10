@@ -1,8 +1,16 @@
-import os
-import torch
-import torch.nn as nn
+import sys
 from pathlib import Path
-from models.xarxa_truc import CosMultiInput
+
+# Only import torch if NOT running as a frozen executable (ONNX bypass)
+if not (getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')):
+    import torch
+    import torch.nn as nn
+    from models.xarxa_truc import CosMultiInput
+else:
+    # Dummy classes for Nuitka to keep analyzing without torch
+    class nn:
+        class Module: pass
+    CosMultiInput = object
 
 # Dimensions fixes
 LATENT_DIM = 128
@@ -33,6 +41,8 @@ class XarxaUnificada(nn.Module):
     per a ser usada directament amb agents de RLCard (DQN/NFSP).
     """
     def __init__(self, n_actions, mlp_layers, mode, weights=None, device=None, output="q"):
+        if getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version'):
+             raise ImportError("XarxaUnificada (Torch) no s'ha d'usar en mode frozen. Usa l'adaptador ONNX.")
         super().__init__()
         
         self.mode = mode
