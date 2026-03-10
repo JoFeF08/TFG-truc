@@ -16,21 +16,12 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
     if tipus in ("huma", "default"):
         return None
 
-    ruta = spec.get("ruta")
-    if tipus == "onnx" or (ruta and ruta.lower().endswith(".onnx")):
-        from models.adapters.onnx_model import ONNXModelAdapter
-        from entorn.env import TrucEnv
-        from models.adapters.feature_extractor import wrap_env_aplanat
+    if tipus == "nfsp":
+        from models.adapters.rlcard_model import _crear_nfsp
+        return _crear_nfsp(spec, env_config)
 
-        env = TrucEnv(
-            config={
-                "num_jugadors": env_config.get("num_jugadors", 2),
-                "cartes_jugador": env_config.get("cartes_jugador", 3),
-                "senyes": env_config.get("senyes", False),
-            }
-        )
-        env_wrapped = wrap_env_aplanat(env)
-
-        return ONNXModelAdapter(ruta, env_wrapped._extract_state)
+    if tipus == "dqn":
+        from models.adapters.rlcard_model import _crear_dqn
+        return _crear_dqn(spec, env_config)
 
     return None
