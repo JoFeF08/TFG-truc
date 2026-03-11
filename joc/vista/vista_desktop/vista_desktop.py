@@ -10,18 +10,20 @@ import sys
 from joc.entorn.cartes_accions import ACTION_LIST
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """ Get absolute path to resource, works for dev, PyInstaller and Nuitka """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        # Nuitka onefile extreu a tmp, podem obtenir el root amb __main__.__file__
+        if '__main__' in sys.modules and hasattr(sys.modules['__main__'], '__file__'):
+            base_path = os.path.dirname(os.path.abspath(sys.modules['__main__'].__file__))
+        else:
+            base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
     
-    # Try current directory first, but if it exists in _MEIPASS it wins
     return Path(os.path.join(base_path, relative_path))
 
-# Imatges de la interfície: vista/vista_desktop/img_iu/cartesSeparades
-_IMG_DIR = resource_path(os.path.join("vista", "vista_desktop", "img_iu", "cartesSeparades"))
+_IMG_DIR = resource_path(os.path.join("joc", "vista", "vista_desktop", "img_iu", "cartesSeparades"))
 
 ACCIONS_CAT = [
     "Jugar carta 1", "Jugar carta 2", "Jugar carta 3",
@@ -98,11 +100,17 @@ class VistaDesktop:
 
         def run():
             self._root = tk.Tk()
-            self._root.title("Truc")
+            self._root.title("ManillIA")
             self._root.configure(bg=BG)
             # Mida inicial i límits perquè la taula i el panell d'accions es vegin bé
             self._root.geometry("1200x900")
             self._root.minsize(1000, 750)
+            self._root.state('zoomed') # Fullscreen per defecte en Windows
+            
+            p_ico = resource_path("icona.ico")
+            if p_ico.exists():
+                self._root.iconbitmap(str(p_ico))
+                
             self._root.protocol("WM_DELETE_WINDOW", self._on_close)
             ready.set()
             self._root.mainloop()

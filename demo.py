@@ -1,7 +1,6 @@
 import importlib
 try:
     import rlcard.envs.registration
-    # Patch EnvSpec.__init__ to ignore missing modules (like blackjack)
     _original_init = rlcard.envs.registration.EnvSpec.__init__
     def _patched_init(self, env_id, entry_point=None):
         self.env_id = env_id
@@ -35,23 +34,12 @@ def resource_path(relative_path):
         # PyInstaller onefile
         base_path = sys._MEIPASS
     else:
-        # Nuitka onefile/standalone i mode desenvolupament.
-        # En Nuitka compilat, __file__ apunta al directori d'extracció temporal.
-        # En dev, apunta al directori del script.
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
 
-DEFAULT_MODEL_PATH = r"C:\Users\ferri\Documents\ProjectesCodi\TFG-truc\RL\models\best.npz"
-
-is_frozen = getattr(sys, 'frozen', False) or hasattr(sys, 'nuitka_version')
-
-if is_frozen:
-    MODEL_PATH = resource_path(os.path.join("RL", "models", "best.npz"))
-    TIPUS_AGENT = "numpy_dqn"
-else:
-    MODEL_PATH = DEFAULT_MODEL_PATH
-    TIPUS_AGENT = "numpy_dqn"
+MODEL_PATH = resource_path(os.path.join("RL", "models", "best.npz"))
+TIPUS_AGENT = "numpy_dqn"
 
 config = {
     "num_jugadors": 2,
