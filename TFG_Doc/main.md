@@ -434,21 +434,23 @@ Aquest mètode de l'entorn delega directament a `TrucGame.get_legal_actions()`, 
 
 ## Entrenament i Models d'Aprenentatge per Reforç
 
-L'entrenament dels agents per jugar al Truc es basa en arquitectures de Reinforcement Learning adaptades a l'entorn de simulació del joc.
+L'entrenament dels agents per jugar al Truc es basa en arquitectures de Reinforcement Learning adaptades a l'entorn de simulació del joc d'informació imperfecta.
 
 ### Models de decisió (RLCard)
 
 S'utilitzen dos grans algorismes proporcionats i adaptats des d'RLCard:
 
 1. **Deep Q-Network (DQN)**:
+   - Utilitza una xarxa neuronal (\texttt{qnet}) per estimar la funció de valor $Q(s, a)$. Sovint s'emprèn una xarxa MLP profunda, en el nostre cas de `[256, 256]` neurones ocultes cap amunt.
+   - L'entrenament segueix un mètode de *Self-Play* contra una versió congelada d'ell mateix. Durant l'entrenament, l'agent reajusta els pesos mitigant l'error quadràtic entre les prediccions i les recompenses emmagatzemades al *Replay Buffer*.
+   - Quan l'agent principal assoleix un alt rendiment validat en fase d'avaluació, els seus nous pesos es transfereixen a l'oponent "congelat", obligant-lo a superar-se constantment pas a pas en aquesta guerra armamentística per lluitar contra l'estancament.
 
-   - Utilitza una xarxa neuronal per estimar la funció de valor $Q(s, a)$.
-   - L'entrenament segueix un mètode de *Self-Play* contra una versió congelada d'ell mateix, superant llindars de victòria establerts en fase d'avaluació.
-   - S'enfoca a combatre la variància d'estratègies amb oponents aleatoris i històrics arxivats (*Opponent Pool*).
 2. **Neural Fictitious Self-Play (NFSP)**:
-
-   - Manté dues xarxes paral·leles: una *Q-Network* (RL per a l'estratègia explotadora) i una xarxa *Supervised Learning* (que imita i genera una *Average Policy* global).
-   - Està dissenyat específicament per assolir l'Equilibri de Nash en jocs multi-agent d'informació imperfecta competitius.
+   - Algorisme més complex i avançat dissenyat explícitament per cercar i assolir Equilibris de Nash en jocs competitius d'informació imperfecta.
+   - Manté i entrena dues xarxes separades paral·leles:
+     - **Xarxa RL (Q-Network)**: Es focalitza absolutament a trobar i potenciar l'estratègia temporal més *explotadora* contra el rival concret actual.
+     - **Xarxa SL (Supervised Learning)**: Aprenentatge imitant al passat per generar una "Política Mitjana" (*Average Policy*) estable i menys fràgil.
+   - Les seves avaluacions i movilitats entre les dues polítiques intercanvien de paper estocàsticament i el seu entrenament finalitza habitualment desembocant en un *Playoff* o duel final a mort entre les millores versions d'ells mateixos emmagatzemades al llarg del temps.
 
 ### La Xarxa Unificada (El "Cos")
 
@@ -458,42 +460,45 @@ Implementat a `xarxa_unificada.py`, està estructurat internament per PyTorch en
 
 - **Branca A (Cartes)**: Xarxa Conv2D (CNN) per extreure complexitats tàctiques del tensor principal de mida `(6, 4, 9)`.
 - **Branca B (Context)**: Perceptró Multicapa (MLP) lineal al vector de configuració `(17,)`.
-  Les dues branques conflueixen de forma encadenada cap a un únic espai latent densament connectat que es transfereix cap als algoritmes de dalt (DQN o NFSP).
+Les dues branques conflueixen de forma encadenada cap a un únic espai latent densament connectat que es transfereix cap als algoritmes de dalt (DQN o NFSP).
 
 #### Preentrenament Supervisat del Cos
 
-Abans de l'entrenament per reforç, s'executa l'script `preentrenar_cos.py`. Aquest script duu a terme un aprenentatge supervisat per dotar la xarxa d'una extracció fonamental i profunda sobre el sentit lògic del joc.
+Abans d'enfrontar a la interacció i recompensa lliure (*Reinforcement Learning*), s'ha d'executar el fitxer `preentrenar_cos.py`. El seu objectiu és dur a terme un aprenentatge supervisat forçós per dotar ràpidament tota aquesta vasta xarxa inferior de connexió d'una capacitat fonamental immensa de com "llegir", entendre i desgranar les normes elementals del Truc.
 
-**Justificació i Metodologia:**
+L'espai d'estats de la partida és excessivament enorme i complex, per tant es processen i s'extreuen centenars de milers de situacions de partides aleatòries i s'etiqueten per obligar a complir tres clares missions als tensors. Aquest cos haurà de reaccionar amb altes precisions i predir **abans** de poder jutjar estratègicament un valor:
 
-Comprendre l'estat d'una partida de Truc no és trivial per a una xarxa neuronal des de zero (es triga massa en un espai d'estats tan complex). Per accelerar i consolidar el coneixement de l'agent RL, s'extreuen centenars de milers de mostres de partides aleatòries, etiquetant tres aspectes clau que l'arquitectura ha de predir abans d'aprendre a jugar de debò:
+1. Punts sumatoris potencials d'**Envit** de la mà visual actual (*Error Quadràtic Mitjà, MSE*).
+2. Força global de la mà al final per una suposada victòria cega al **Truc** (*MSE*).
+3. Classificació perceptiva si la xarxa entén què signifiquen les 19 possibles **accions d'entrada de joc contínues** legalment possibles en aquell context situacional de lliure circulació (*Entropia Creuada Binària, BCE*).
 
-1. La predicció dels punts d'Envit segons les cartes de la mà (Error Quadràtic Mitjà, MSE).
-2. La predicció de la força total de la mà per a l'aposta del Truc (MSE).
-3. La classificació (BCE) de quines de les 19 accions de `ACTION_LIST` són legals en aquell precís moment.
-
-En preentrenar amb regularització L2, Dropout, un split 80/20 i *Early Stopping*, s'obté una xarxa extractora (*Feature Extractor*) molt rica en coneixement de les regles del joc. Aquests pesos es desen i s'incorporen per accelerar significativament la convergència dels models posteriors en la fase RL.
+El preentrenament es solidifica aplicant mesures de retenció pròpies al supervisat amb regularitzacions $L2$, *Dropout*, segments del $80/20\%$ per la prova-error, validant models via l'avaluador *Early Stopping*. Això converteix inicialment el joc brusc i confús en un espai latent de representacions preparades i predigerides sobre el funcionament abstracte. Els resultats de pesos s'exporten.
 
 ### Metodologia d'Entrenament i Constants Avançades
 
-L'script d'entrenament utilitza metodologies rigoroses de Reinforcement Learning. Les principals tècniques i les seves repercussions són:
+L'script iteratiu referencial del projecte (`entrenaments_unificats.py`) s'aprovisiona d'uns estàndards formatius i metodologies clares per millorar l'experiència global de validacions per Reinforcement Learning:
 
-- **Estratègia d'exploració ($\epsilon$-greedy)**: Es rebaixa l'exploració de manera lineal des del $100\%$ d'atzar fins a un $\epsilon$ mínim del $10\%$. S'assegura que en la primera meitat de l'entrenament el model adquireixi experiència àmplia, mentre que a la segona meitat consolidi estratègies explotadores fiables.
-- **Learning Rate Scheduling (LR Decay)**: En episodis del 25%, 50% i 75% del total, la taxa d'aprenentatge disminueix dràsticament reduint-se a la meitat. Això evita fluctuacions o destrucció del coneixement prop del punt de convergència (l'asímptota final de la pèrdua) assegurant estabilitat a l'últim tram.
-- **Opponent Pool (exclusiu DQN pel sobreajustament)**: L'entrenament contra un únic oponent pot fer que l'agent s'hi sobreajusti (*overfitting*). S'ha implementat que l'agent DQN s'enfronti aleatòriament a: 
-  - un $20\%$ Random explícit.
-  - un $40\%$ l'oponent més recent mitjançant Soft-Update o actualització *Polyak* (una actualització del 5% dels nous pesos constant).
-  - un $40\%$ a una selecció aleatòria de models anteriors arxivats (*Historical Pool*). 
-  Això obliga a l'agent principal a aprendre estratègies més generals i a no oblidar contramesures antigues.
-- **Reward Scheduling (Evolució del factor Beta)**: Es modula el grau d'agressivitat al final de cada victòria introduint o incrementant lleugerament les recompenses negatives en perdre mitjançant l'evolució Beta amb el progrés dels episodis, incentivant estratègies inicialment valentes però finalment més conservadores i pragmàtiques.
+- **Estratègia d'exploració ($\epsilon$-greedy)**: Progressivament l'atzar cau. L'exploració es fa decréixer linealment sortint del $100\%$ pur aleatori al començar fins arribar a un asímptota mínim fix del $10\%$ del temps en els darrers moviments. L'agent explora el tauler a fons a l'inici, per acabar executant amb ferma seguretat de decisió al final.
+- **Learning Rate Scheduling (LR Decay)**:  En episodis del 25%, 50% i 75% del total de transcursos predefinits, la passa pròpia o la taxa base d'aprenentatge del sistema perd intensitat decreixent tallant-se en dos (reduïda a la meitat). Això evita fluctuacions o destruccions del coneixement prop del punt de convergència (l'asímptota final de la pèrdua), actuant d'estalvi.
+- **Opponent Pool (mesura anti-Overfitting pel DQN)**: L'únic desavantatge real rellevant d'aprendre a combatre contra tu en modes paral·lels contínuament per un agent agressiu com al DQN és l'*overfitting* cec davant d'altres possibles errors puntuals externs o jugadors diferents. Així, cada episodi, el DQN selecciona el seu combatent lluitador mitjançant aquest mètode probabilístic de percentatges definits:
+  - $20\%$ Model totalment `Random`, el test contra estupiditats humanes de base per entendre accions primeres il·lògiques i guanyar sempre a accions garrafals errades.
+  - $40\%$ Oponent iteratiu basat en soft actualitzacions contínues de nosaltres mateixos d'avui en dia: mètode `Polyak/Soft Update` (delimitades en fons constant base al $5\%$ respecte als nous pesos lliures per fixació iterativa base).
+  - $40\%$ Sistema fort anomenat Pool històric (`Historical Pool`) d'una selecció a l'atzar de models antics anteriors arxivats d'estratègies defensives i primitives contra l'"oblit catastròfic" de vells coneixements bàsic defensiu.
+- **Reward Scheduling (Beta Evolutiva)**: Es modul·la el grau d'agressivitat al final de cada victòria introduint o incrementant lleugerament les recompenses negatives en perdre mitjançant l'evolució del factor numèric de la Beta amb el progrés dels episodis o partides constants, tot per afavorir el pas estratègies inicialment valentes però que finalment virin cap a més conservadores i pragmàtiques amb els passatges decisius de tancament, respectant victòries netes a assegurar enfront cops desprotegits.
 
-L'entrenament dels algoritmes inclou també tres modes modulars sobre com rebre l'injector el **Cos**:
+Addicionalment a aquest tractament complex unificador modular genèric iterat, els formadors del programa poden ser inicialitzats sota tres modes prèviament triats respecte a l'arquitectura unificada genèrica referent al **Cos**:
 
-- **Scratch**: Començar l'aprenentatge completament a l'atzar des de zero. (Temps alt per convergència).
-- **Frozen**: Cos extret i carregat, però s'entrenen només exclusivament els caps del DQN/NFSP. L'extracció de dades estructural ha esdevingut ja tancada.
-- **Fine-tune**: Cos preentrenat injectat amb un minúscul *Learning Rate suau*, lliurant-lo dels matisos i perfeccionament propis específics per combatre del final de l'aprenentatge actiu.
+- **Scratch**: Començar l'aprenentatge del model i política completament des de zero (amb les dimensions buides). És molt farragós assoleix l'extracció global lliure en total final base més alt teòric però amb temps brut.
+- **Frozen**: Ús d'un Cos prèviament carregat totalment tancat pre-entrenat base inalterable (`requires_grad = False`). L'estat queda fix. S'entrenen només exclusivament els nombrosos "Caps" o els MLP d'Avaluacions de model de Q-Values propis als inferencials DQN i NFSP precipitant i provocant en corbes de validació inicialment denses els creixements positius espectacularment més disparats dels 3.
+- **Fine-tune**: Cos preentrenat dotat dels pesos anteriors injectat inicialment però on la xarxa queda tota lliure a re-entrenament. L'ajustament depèn precisant i diferenciant dues mesures base clau separades internament per un Learning Rate suau al mòdul d'inferència: rep d'arrel i sottom un lent modificador lent d'`1e-5` al referent al procés extractor (suficient per llimar irregularitats per atzar base extretes abans però sense esmicolar la complexa malla extreta i deduïda ràpida lògica), sumant-ho amb la taxa base al ritme contigu normal a `5e-4` natural de la referència dels variables resolutius superposats d'arrel i cap MLP propi a les decisions estocàstiques DQN/NFSP.
 
-S'extreu de les avaluacions que en partides llargues formades (com en un torneig *Round-Robin* o avaluació de resultats), un agent basat en DQN guanya sobre altres variants ja que el seu mètode reacciona amb més fermesa, assumint més risc constant respecta les pràctiques globals acadèmiques pures defensives (ex: l'equilibri de Nash que cerca l'escalat intern del NFSP).
+### Anàlisi de Resultats i el Notebook  (Conclusions de la Comparativa Tècnica)
+
+Segons les dades i analítiques pures del registre generat al fitxer pràctic d'estudi previ referenciat al `Comparativa_Experiments.ipynb` presentat com a suport del programari, un cop elaborades diverses jornades de partides complexes en formació i avaluades totes de cop lluitant tancades per lligues i encreuaments de *Round-Robin* globals (tots contra tots i analitzant el seu rendiment):
+
+Presenta un factor resolutiu conclusiu final de significat pur d'èxit capgirat superior: el model basat en naturalesa teòrica i empírica pel mètode **DQN d'arrels Scratch o als fins Fine-tune guanyaven i superaven notablement qualsevol variant tancada per estratègies NFSP predefinint l'atzar total de referència pur global.**
+
+Tot i l'alta densitat analítica multi-agent promès del comportament model de la varietat NFSP; aquest gir en l'eficiència es determina tàcitament atès que el Truc tracta jocs d'entitat esporàdics amb un temps d'entitat curta temporal on les accions es veuen limitades al voltant d'erràtics tancats amb molt poc marge establert asimètric. En buscar una política d'equilibri conservador global (l'*Average Policy* pura establerta que tractarà sempre de fugir de l'explosió i buscar estabilitats denses de "passar a ser conservador respecte allò general iterat"), perd avantatge general. En un entorn que en canvi requereix en gran manera llança't contínuament respecte un risc agressiu variable reaccionari o defensivament i de forma ràpida; un agent fort empíric basat a treure rèdit a base maximitzar agressivament d'instints d'errades com genera respectiu l'esgotament elèctric de l'experiència pròpia contra si d'actes d'una vella mecànica estocàstica adaptativa com el DQN (en el que tota actuació és absolutament calculada sobre els Q-Values directes) en resulta un campió tàctic indiscutible guanyant partides i cops d'autoritat de forma immediata gràcies a encerts per sorpresa valents superiors (sumant *win rate* asimètric).
 
 ---
 
