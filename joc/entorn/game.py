@@ -95,6 +95,7 @@ class TrucGame:
         return self._get_return_state()
 
     def step(self, action):
+        # self.debug_print(f"DEBUG: step action={action} current_player={self.current_player} num_jugadors={self.num_jugadors}")
         self.ultim_guanyador_envit = None
         self.ultim_guanyador_truc = None
         action_str = ACTION_LIST[action] if isinstance(action, (int, np.integer)) else action
@@ -116,7 +117,7 @@ class TrucGame:
 
                 elif action_str == 'fora_envit':
                     points_won = self.previous_envit_level
-                    winner_team = self.judger.get_equip((self.current_player + 1) % 2)
+                    winner_team = 1 - self.judger.get_equip(self.current_player)
                     
                     self.punts_envit_pendents = (winner_team, points_won, None)
                     self.ultim_guanyador_envit = (winner_team, points_won, None)
@@ -151,7 +152,7 @@ class TrucGame:
                         self.score[eq] += pts
                         self.punts_envit_pendents = None
 
-                    winner_team = self.judger.get_equip((self.current_player + 1) % 2)
+                    winner_team = 1 - self.judger.get_equip(self.current_player)
                     self.score[winner_team] += self.previous_truc_level
                     self.ultim_guanyador_truc = (winner_team, self.previous_truc_level)
                     
@@ -231,7 +232,7 @@ class TrucGame:
             # Resoldre envit si estava acceptat però no calculat
             self._resoldre_envit_si_pendent()
         
-            winner = (self.current_player + 1) % 2
+            winner = 1 - self.judger.get_equip(self.current_player)
             
             # Sumar envits pendents
             if self.punts_envit_pendents:
@@ -460,8 +461,9 @@ class TrucGame:
         payoffs = []
 
         for pid in range(self.num_jugadors):
-            oponent = (pid + 1) % 2
-            delta = score[pid] - score[oponent]
+            team_id = self.judger.get_equip(pid)
+            opponent_team = 1 - team_id
+            delta = score[team_id] - score[opponent_team]
             
             if delta == 0:
                 payoffs.append(0.0)

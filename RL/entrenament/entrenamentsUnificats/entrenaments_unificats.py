@@ -10,7 +10,7 @@ from datetime import datetime
 from contextlib import redirect_stdout
 from copy import deepcopy
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 import random
 import torch

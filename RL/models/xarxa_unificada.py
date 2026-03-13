@@ -11,7 +11,7 @@ LATENT_DIM = 128
 OBS_CARTES_SHAPE = (6, 4, 9)
 OBS_CONTEXT_SIZE = 17
 
-COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent / 
+COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent / 
                        "entrenament" / "entrenamentEstatTruc" / "registres" / 
                        "05_03_26_a_les_0015" / "models" / "best_pesos_cos_truc.pth")
 
