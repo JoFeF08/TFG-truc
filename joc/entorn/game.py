@@ -546,3 +546,39 @@ class TrucGame:
         
         self.turn_phase = 0 if self.senyes else 1
         self.response_state = ResponseState.NO_PENDING
+
+    def _pes_ronda(self, ronda_num, ronda_winners):
+        """
+        Dona un pes dinàmic de la ronda actual
+        """
+        n_cartes = self.cartes_jugador
+
+        # Distribucions per 3 i 5 cartes
+        if n_cartes == 3:
+            pesos = [1.0, 0.8, 0.4]
+        elif n_cartes == 5:
+            pesos = [1.0, 0.9, 0.7, 0.5, 0.3]
+        else:
+            raise ValueError(f"_pes_ronda només suporta 3 o 5 cartes, rebut {n_cartes}")
+
+        pes = pesos[ronda_num]
+
+        rondes_equip_0 = 0
+        rondes_equip_1 = 0
+
+        for winner in ronda_winners:
+            if winner != -1:  # Si no és empat
+                equip = winner % 2
+                if equip == 0:
+                    rondes_equip_0 += 1
+                else:
+                    rondes_equip_1 += 1
+
+        # Calcular rondes necessàries per guanyar
+        rondes_necessaries = (n_cartes // 2)
+        estas_obligat = rondes_equip_1 >= (rondes_necessaries)
+
+        if estas_obligat:
+            pes = min(1.0, pes * 1.5)
+
+        return pes

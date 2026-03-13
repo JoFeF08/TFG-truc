@@ -6,9 +6,10 @@ from datetime import datetime
 from tqdm import tqdm, trange
 try:
     if '__file__' in globals():
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        # Arribar a l'arrel del projecte (TFG-truc) que està 4 nivells amunt
+        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+        sys.path.insert(0, root_path)
     else:
-
         sys.path.insert(0, os.getcwd())
 except Exception:
     pass
@@ -59,8 +60,8 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
     de l'entorn de joc (TrucEnv).
     """
     cartes_np  = np.zeros((num_mostres, 6, 4, 9), dtype=np.float32)
-    context_np = np.zeros((num_mostres, 17), dtype=np.float32)
-    labels_envido_np = np.zeros((num_mostres, 1), dtype=np.float32)
+    context_np = np.zeros((num_mostres, 23), dtype=np.float32)
+    labels_envit_np = np.zeros((num_mostres, 1), dtype=np.float32)
     labels_truc_np   = np.zeros((num_mostres, 1), dtype=np.float32)
     labels_accions_np= np.zeros((num_mostres, 19), dtype=np.float32)
 
@@ -97,7 +98,7 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
             if mostres_recollides < num_mostres:
                 cartes_np[mostres_recollides] = obs_cartes
                 context_np[mostres_recollides] = obs_context
-                labels_envido_np[mostres_recollides, 0] = punts_envido / ENVIT_MAX
+                labels_envit_np[mostres_recollides, 0] = punts_envido / ENVIT_MAX
                 labels_truc_np[mostres_recollides, 0]   = forca / MAX_FORCA_TRUC
                 labels_accions_np[mostres_recollides]   = labels_acc
                 
@@ -118,7 +119,7 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
     pbar.close()
     return (torch.tensor(cartes_np), 
             torch.tensor(context_np), 
-            torch.tensor(labels_envido_np), 
+            torch.tensor(labels_envit_np), 
             torch.tensor(labels_truc_np),
             torch.tensor(labels_accions_np))
 
@@ -146,10 +147,13 @@ def entrenar():
     print(f"Dataset split completat: Train={n_train}, Val={n_val}")
 
     model = ModelPreEntrenament().to(DEVICE)
-    criteri_mse = nn.MSELoss()
-    criteri_bce = nn.BCEWithLogitsLoss()
-    # Afegim Regularització (Weight Decay)
     optimitzador = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimitzador, mode='min', factor=0.5, patience=5, verbose=True)
+
+    # Pesos per la Loss (Balanç de caps)
+    W_ENVIT = 1.0
+    W_TRUC  = 1.0
+    W_ACC   = 2.0  # Li donem més pes a aprendre les accions legals
 
     log_path = LOG_DIR / "preentrenament_log.csv"
     with open(log_path, "w", newline="", encoding="utf-8") as f:
@@ -188,7 +192,7 @@ def entrenar():
             loss_env  = criteri_mse(pred_env, labels_env)
             loss_truc = criteri_mse(pred_truc, labels_truc)
             loss_acc  = criteri_bce(pred_acc, labels_acc)
-            loss_total = loss_env + loss_truc + loss_acc
+            loss_total = (W_ENVIT * loss_env) + (W_TRUC * loss_truc) + (W_ACC * loss_acc)
             
             loss_total.backward()
             optimitzador.step()
@@ -213,7 +217,7 @@ def entrenar():
                 loss_env  = criteri_mse(pred_env, labels_env)
                 loss_truc = criteri_mse(pred_truc, labels_truc)
                 loss_acc  = criteri_bce(pred_acc, labels_acc)
-                loss_total = loss_env + loss_truc + loss_acc
+                loss_total = (W_ENVIT * loss_env) + (W_TRUC * loss_truc) + (W_ACC * loss_acc)
                 
                 val_loss_total += loss_total.item() * cartes.size(0)
                 v_env_tot += loss_env.item() * cartes.size(0)
@@ -225,9 +229,13 @@ def entrenar():
         val_truc_avg = v_truc_tot / n_val
         val_acc_avg  = v_acc_tot / n_val
         
+        # Actualització del Scheduler
+        scheduler.step(val_loss_avg)
+        lr_actual = optimitzador.param_groups[0]['lr']
+
         # Guardem els logs
         with open(log_path, "a", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow([epoca, train_loss_avg, val_loss_avg, val_env_avg, val_truc_avg, val_acc_avg])
+            csv.writer(f).writerow([epoca, train_loss_avg, val_loss_avg, val_env_avg, val_truc_avg, val_acc_avg, lr_actual])
         
         PRINT_CADA = NUM_EPOCHS // 20
         
