@@ -33,28 +33,28 @@ L'objectiu principal és proporcionar un entorn robust per simular partides de T
 
 ## Arquitectura del joc del Truc
 
-Aquest projecte implementa una arquitectura Model–Vista–Controlador (MVC) que separa clarament tres rols:
+Aquest projecte implementa una arquitectura Model—Vista—Controlador (MVC) que separa clarament tres rols:
 
-- **Controlador**: orquestra el flux; demana dades i accions a la vista, consulta i modifica l’estat a través del model, i no depèn de cap implementació concreta de vista o model.
+- **Controlador**: orquestra el flux; demana dades i accions a la vista, consulta i modifica l'estat a través del model, i no depèn de cap implementació concreta de vista o model.
 - **Model**: lògica del joc (estat, regles, jugadors bots).
-- **Vista**: entrada i sortida amb l’usuari (configuració, mostrat d’estat, selecció d’accions, resultats).
+- **Vista**: entrada i sortida amb l'usuari (configuració, mostrat d'estat, selecció d'accions, resultats).
 
-El controlador depèn només d’**interfícies** (contractes): qualsevol vista i qualsevol model que implementin aquests contractes poden ser utilitzats sense canviar el controlador.
+El controlador depèn només d'**interfícies** (contractes): qualsevol vista i qualsevol model que implementin aquests contractes poden ser utilitzats sense canviar el controlador.
 
 ### El Controlador
 
-El **controlador** (`controlador/controlador.py`) és l’únic punt que coneix tant la vista com el model. La seva funció és:
+El **controlador** (`controlador/controlador.py`) és l'únic punt que coneix tant la vista com el model. La seva funció és:
 
 1. Obtenir la configuració inicial mitjançant la vista.
 2. Inicialitzar el model amb aquesta configuració.
 3. En un bucle, mentre la partida no hagi acabat:
    - Saber quin jugador juga (model).
-   - Si és humà: mostrar l’estat (vista), demanar una acció (vista), aplicar-la (model) i informar la vista.
-   - Si és bot: obtenir l’acció del model, aplicar-la i informar la vista.
+   - Si és humà: mostrar l'estat (vista), demanar una acció (vista), aplicar-la (model) i informar la vista.
+   - Si és bot: obtenir l'acció del model, aplicar-la i informar la vista.
 4. Un cop acabada la partida, obtenir el resultat del model i mostrar-lo per la vista.
 5. Preguntar si es vol repetir (vista) i, si cal, mostrar el missatge de sortida.
 
-El controlador **no** conté lògica de joc ni lògica d’interfície: només coordina crides entre vista i model segons el contracte.
+El controlador **no** conté lògica de joc ni lògica d'interfície: només coordina crides entre vista i model segons el contracte.
 
 #### Contracte amb el Model
 
@@ -63,11 +63,11 @@ El controlador parla amb el model a través del **protocol** `Model` (`controlad
 | Mètode                        | Signatura                                       | Descripció                                                                                             |
 | :----------------------------- | :---------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
 | `iniciar`                    | `(self, config: dict) -> None`                | Crea i inicialitza una partida amb la configuració donada.                                             |
-| `get_estat`                  | `(self, jugador_id: int) -> dict`             | Retorna l’estat visible per al jugador amb aquest id.                                                  |
-| `get_jugador_actual`         | `(self) -> int`                               | Retorna l’id del jugador que ha de jugar ara.                                                          |
-| `es_huma`                    | `(self, jugador_id: int) -> bool`             | Indica si el jugador és humà (l’accions vindran de la vista).                                        |
+| `get_estat`                  | `(self, jugador_id: int) -> dict`             | Retorna l'estat visible per al jugador amb aquest id.                                                   |
+| `get_jugador_actual`         | `(self) -> int`                               | Retorna l'id del jugador que ha de jugar ara.                                                           |
+| `es_huma`                    | `(self, jugador_id: int) -> bool`             | Indica si el jugador és humà (l'accions vindran de la vista).                                         |
 | `get_accio_bot`              | `(self, jugador_id: int) -> tuple[int, str]`  | Retorna `(codi_accio, nom_accio)` triada pel bot.                                                     |
-| `aplicar_accio`              | `(self, accio: int) -> None`                  | Aplica l’acció amb codi donat i avança l’estat del joc.                                             |
+| `aplicar_accio`              | `(self, accio: int) -> None`                  | Aplica l'acció amb codi donat i avança l'estat del joc.                                               |
 | `get_guanyador_envit_recent` | `(self) -> tuple[int, int, list[int]] \| None` | Retorna `(equip, punts, punts_detall)` de l'envit que s'acaba de tancar, si n'hi ha.                  |
 | `get_guanyador_truc_recent`  | `(self) -> tuple[int, int] \| None`            | Retorna `(equip, punts)` del truc (mà) que s'acaba de tancar, si n'hi ha.                            |
 | `es_final`                   | `(self) -> bool`                              | Indica si la partida ha acabat.                                                                         |
@@ -82,14 +82,14 @@ El controlador parla amb la vista a través del **protocol** `Vista` (`vista/int
 | Mètode                     | Signatura                                                           | Descripció                                                                                       |
 | :-------------------------- | :------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------ |
 | `demanar_config`          | `(self) -> dict`                                                  | Demana (per la UI) i retorna la configuració del joc.                                            |
-| `mostrar_estat`           | `(self, estat: dict) -> None`                                     | Mostra l’estat actual del joc (taula, mà, puntuació, info de ronda, etc.).                     |
-| `escollir_accio`          | `(self, accions_legals: list, estat: dict) -> int`                | Presenta les accions legals; l’usuari en tria una; retorna el**codi** d’acció (enter).   |
+| `mostrar_estat`           | `(self, estat: dict) -> None`                                     | Mostra l'estat actual del joc (taula, mà, puntuació, info de ronda, etc.).                      |
+| `escollir_accio`          | `(self, accions_legals: list, estat: dict) -> int`                | Presenta les accions legals; l'usuari en tria una; retorna el**codi** d'acció (enter).     |
 | `mostrar_accio`           | `(self, jugador_id: int, nom_accio: str, es_bot: bool) -> None`   | Informa quina acció ha fet un jugador. Si `es_bot=True`, la vista pot afegir un retard visual. |
 | `mostrar_guanyador_envit` | `(self, equip: int, punts: int, punts_detall: list[int]) -> None` | Comunica qui ha guanyat l'envit temporal parcial de la mà en joc.                                |
 | `mostrar_guanyador_truc`  | `(self, equip: int, punts: int) -> None`                          | Comunica qui ha guanyat el truc i el repartiment sota una mà temporal tancada.                   |
 | `mostrar_fi_partida`      | `(self, score: list, payoffs: list) -> None`                      | Mostra el resultat final (marcador i payoffs).                                                    |
 | `demanar_repetir`         | `(self) -> bool`                                                  | Pregunta si es vol jugar una altra partida. Retorna `True` si sí.                              |
-| `mostrar_sortint`         | `(self) -> None`                                                  | Indica que l’usuari surt de l’aplicació.                                                       |
+| `mostrar_sortint`         | `(self) -> None`                                                  | Indica que l'usuari surt de l'aplicació.                                                         |
 
 ### Model
 
@@ -441,16 +441,15 @@ L'entrenament dels agents per jugar al Truc es basa en arquitectures de Reinforc
 S'utilitzen dos grans algorismes proporcionats i adaptats des d'RLCard:
 
 1. **Deep Q-Network (DQN)**:
-   - Utilitza una xarxa neuronal (\texttt{qnet}) per estimar la funció de valor $Q(s, a)$. Sovint s'emprèn una xarxa MLP profunda, en el nostre cas de `[256, 256]` neurones ocultes cap amunt.
+
+   - Utilitza una xarxa neuronal ($qnet$) per estimar la funció de valor $Q(s, a)$. Sovint s'emprèn una xarxa MLP profunda, en el nostre cas de `[256, 256]` neurones ocultes cap amunt.
    - L'entrenament segueix un mètode de *Self-Play* contra una versió congelada d'ell mateix. Durant l'entrenament, l'agent reajusta els pesos mitigant l'error quadràtic entre les prediccions i les recompenses emmagatzemades al *Replay Buffer*.
    - Quan l'agent principal assoleix un alt rendiment validat en fase d'avaluació, els seus nous pesos es transfereixen a l'oponent "congelat", obligant-lo a superar-se constantment pas a pas en aquesta guerra armamentística per lluitar contra l'estancament.
-
 2. **Neural Fictitious Self-Play (NFSP)**:
+
    - Algorisme més complex i avançat dissenyat explícitament per cercar i assolir Equilibris de Nash en jocs competitius d'informació imperfecta.
    - Manté i entrena dues xarxes separades paral·leles:
      - **Xarxa RL (Q-Network)**: Es focalitza absolutament a trobar i potenciar l'estratègia temporal més *explotadora* contra el rival concret actual.
-     - **Xarxa SL (Supervised Learning)**: Aprenentatge imitant al passat per generar una "Política Mitjana" (*Average Policy*) estable i menys fràgil.
-   - Les seves avaluacions i movilitats entre les dues polítiques intercanvien de paper estocàsticament i el seu entrenament finalitza habitualment desembocant en un *Playoff* o duel final a mort entre les millores versions d'ells mateixos emmagatzemades al llarg del temps.
 
 ### La Xarxa Unificada (El "Cos")
 
@@ -460,47 +459,59 @@ Implementat a `xarxa_unificada.py`, està estructurat internament per PyTorch en
 
 - **Branca A (Cartes)**: Xarxa Conv2D (CNN) per extreure complexitats tàctiques del tensor principal de mida `(6, 4, 9)`.
 - **Branca B (Context)**: Perceptró Multicapa (MLP) lineal al vector de configuració `(17,)`.
+
 Les dues branques conflueixen de forma encadenada cap a un únic espai latent densament connectat que es transfereix cap als algoritmes de dalt (DQN o NFSP).
 
 #### Preentrenament Supervisat del Cos
 
-Abans d'enfrontar a la interacció i recompensa lliure (*Reinforcement Learning*), s'ha d'executar el fitxer `preentrenar_cos.py`. El seu objectiu és dur a terme un aprenentatge supervisat forçós per dotar ràpidament tota aquesta vasta xarxa inferior de connexió d'una capacitat fonamental immensa de com "llegir", entendre i desgranar les normes elementals del Truc.
+Abans d'iniciar l'aprenentatge per reforç, s'ha implementat una fase de preentrenament supervisat mitjançant l'script `preentrenar_cos.py`. L'objectiu d'aquesta fase és dotar a la xarxa d'extracció de característiques d'una comprensió fonamental de la semàntica del joc.
 
-L'espai d'estats de la partida és excessivament enorme i complex, per tant es processen i s'extreuen centenars de milers de situacions de partides aleatòries i s'etiqueten per obligar a complir tres clares missions als tensors. Aquest cos haurà de reaccionar amb altes precisions i predir **abans** de poder jutjar estratègicament un valor:
+- **Dataset**: S'ha generat un dataset sintètic de **200.000 mostres** utilitzant l'entorn de joc real (`TrucEnv`). Les dades es divideixen en un **80% per a entrenament** i un **20% per a validació**.
+- **Regeneració de dades**: Per evitar el *sobreajustament* a un dataset estàtic, s'ha implementat un mecanisme de **regeneració iterativa** que substitueix el dataset complet cada 20 èpoques amb dades noves generades de forma pseudo-aleatòria.
+- **Multitask Learning**: El model s'entrena per predir simultàniament tres objectius crítics:
+  1. **Punts d'Envit (MSE)**: Predicció de la puntuació d'envit de la mà inicial (normalitzat per 24).
+  2. **Força de Truc (MSE)**: Estimació de la potència de les cartes per a la fase de Truc (normalitzat per 330).
+  3. **Accions Legals (BCE with Logits)**: Identificació de quines de les 19 accions possibles són vàlides en un estat donat.
+- **Hiperparàmetres i Regularització**:
+  - Optimitzador: **Adam** amb un Learning Rate de **0.001**.
+  - Regularització: **Weight Decay (L2)** de **1e-4** i capes de **Dropout**.
+  - **Early Stopping**: Aturada de l'entrenament si la pèrdua de validació no millora durant 10 èpoques consecutives.
 
-1. Punts sumatoris potencials d'**Envit** de la mà visual actual (*Error Quadràtic Mitjà, MSE*).
-2. Força global de la mà al final per una suposada victòria cega al **Truc** (*MSE*).
-3. Classificació perceptiva si la xarxa entén què signifiquen les 19 possibles **accions d'entrada de joc contínues** legalment possibles en aquell context situacional de lliure circulació (*Entropia Creuada Binària, BCE*).
+#### Metodologia d'Entrenament per Reforç (DQN i NFSP)
 
-El preentrenament es solidifica aplicant mesures de retenció pròpies al supervisat amb regularitzacions $L2$, *Dropout*, segments del $80/20\%$ per la prova-error, validant models via l'avaluador *Early Stopping*. Això converteix inicialment el joc brusc i confús en un espai latent de representacions preparades i predigerides sobre el funcionament abstracte. Els resultats de pesos s'exporten.
+L'entrenament principal es gestiona des de `entrenaments_unificats.py`, que permet alternar entre diferents algorismes i modes d'integració dels pesos preentrenats.
 
-### Metodologia d'Entrenament i Constants Avançades
+- **Modes d'Integració**:
 
-L'script iteratiu referencial del projecte (`entrenaments_unificats.py`) s'aprovisiona d'uns estàndards formatius i metodologies clares per millorar l'experiència global de validacions per Reinforcement Learning:
+  - **Scratch**: Pesos inicialitzats aleatòriament.
+  - **Frozen**: El "Cos" es manté bloquejat amb els pesos preentrenats, i només s'entrena el "Cap" (MLP).
+  - **Fine-tune**: S'entrena tota la xarxa, però amb un Learning Rate reduït per al "Cos" (**1e-5**) per preservar el coneixement previ.
+- **DQN (Deep Q-Network)**:
 
-- **Estratègia d'exploració ($\epsilon$-greedy)**: Progressivament l'atzar cau. L'exploració es fa decréixer linealment sortint del $100\%$ pur aleatori al començar fins arribar a un asímptota mínim fix del $10\%$ del temps en els darrers moviments. L'agent explora el tauler a fons a l'inici, per acabar executant amb ferma seguretat de decisió al final.
-- **Learning Rate Scheduling (LR Decay)**:  En episodis del 25%, 50% i 75% del total de transcursos predefinits, la passa pròpia o la taxa base d'aprenentatge del sistema perd intensitat decreixent tallant-se en dos (reduïda a la meitat). Això evita fluctuacions o destruccions del coneixement prop del punt de convergència (l'asímptota final de la pèrdua), actuant d'estalvi.
-- **Opponent Pool (mesura anti-Overfitting pel DQN)**: L'únic desavantatge real rellevant d'aprendre a combatre contra tu en modes paral·lels contínuament per un agent agressiu com al DQN és l'*overfitting* cec davant d'altres possibles errors puntuals externs o jugadors diferents. Així, cada episodi, el DQN selecciona el seu combatent lluitador mitjançant aquest mètode probabilístic de percentatges definits:
-  - $20\%$ Model totalment `Random`, el test contra estupiditats humanes de base per entendre accions primeres il·lògiques i guanyar sempre a accions garrafals errades.
-  - $40\%$ Oponent iteratiu basat en soft actualitzacions contínues de nosaltres mateixos d'avui en dia: mètode `Polyak/Soft Update` (delimitades en fons constant base al $5\%$ respecte als nous pesos lliures per fixació iterativa base).
-  - $40\%$ Sistema fort anomenat Pool històric (`Historical Pool`) d'una selecció a l'atzar de models antics anteriors arxivats d'estratègies defensives i primitives contra l'"oblit catastròfic" de vells coneixements bàsic defensiu.
-- **Reward Scheduling (Beta Evolutiva)**: Es modul·la el grau d'agressivitat al final de cada victòria introduint o incrementant lleugerament les recompenses negatives en perdre mitjançant l'evolució del factor numèric de la Beta amb el progrés dels episodis o partides constants, tot per afavorir el pas estratègies inicialment valentes però que finalment virin cap a més conservadores i pragmàtiques amb els passatges decisius de tancament, respectant victòries netes a assegurar enfront cops desprotegits.
+  - **Opponent Pool**: Durant el *Self-Play*, l'agent no només juga contra ell mateix, sinó contra un ventall d'oponents per millorar la robustesa:
+    - **20% Random**: Contra un agent aleatori per exploració bàsica.
+    - **40% Polyak**: Contra una versió suavitzada (soft update, $\tau = 0.05$) dels pesos actuals.
+    - **40% Historical**: Contra versions passades desades en un pool de models.
+  - **Reward Scheduling**: Aplicació d'una evolució de la variable **Beta** (de **0.5 a 1.0**) que modula les recompenses per prioritzar primer la supervivència i després la victòria.
+  - **Learning Rate Decay**: En els punts 25%, 50% i 75% del total, la taxa base d'aprenentatge es redueix a la meitat (factor 0.5) per estabilitzar la convergència.
+- **NFSP (Neural Fictitious Self-Play)**:
 
-Addicionalment a aquest tractament complex unificador modular genèric iterat, els formadors del programa poden ser inicialitzats sota tres modes prèviament triats respecte a l'arquitectura unificada genèrica referent al **Cos**:
+  - Implementa una arquitectura de **duplicitat de xarxes** per assolir Equilibris de Nash:
+    - **Xarxa RL (DQN)**: Per aprendre la millor resposta (Best Response) contra el rival actual.
+    - **Xarxa SL (Supervised Learning)**: Aprenentatge per generar una "Política Mitjana" (*Average Policy*) estable i menys fràgil.
+  - Paràmetre **Eta (0.3)**: Determina la probabilitat de seleccionar l'acció de la xarxa RL versus la xarxa SL.
 
-- **Scratch**: Començar l'aprenentatge del model i política completament des de zero (amb les dimensions buides). És molt farragós assoleix l'extracció global lliure en total final base més alt teòric però amb temps brut.
-- **Frozen**: Ús d'un Cos prèviament carregat totalment tancat pre-entrenat base inalterable (`requires_grad = False`). L'estat queda fix. S'entrenen només exclusivament els nombrosos "Caps" o els MLP d'Avaluacions de model de Q-Values propis als inferencials DQN i NFSP precipitant i provocant en corbes de validació inicialment denses els creixements positius espectacularment més disparats dels 3.
-- **Fine-tune**: Cos preentrenat dotat dels pesos anteriors injectat inicialment però on la xarxa queda tota lliure a re-entrenament. L'ajustament depèn precisant i diferenciant dues mesures base clau separades internament per un Learning Rate suau al mòdul d'inferència: rep d'arrel i sottom un lent modificador lent d'`1e-5` al referent al procés extractor (suficient per llimar irregularitats per atzar base extretes abans però sense esmicolar la complexa malla extreta i deduïda ràpida lògica), sumant-ho amb la taxa base al ritme contigu normal a `5e-4` natural de la referència dels variables resolutius superposats d'arrel i cap MLP propi a les decisions estocàstiques DQN/NFSP.
+#### Anàlisi de Resultats i el Notebook (Conclusions)
 
-### Anàlisi de Resultats i el Notebook  (Conclusions de la Comparativa Tècnica)
+Segons les dades del registre de `Comparativa_Experiments.ipynb`, s'han extret conclusions determinants:
 
-Segons les dades i analítiques pures del registre generat al fitxer pràctic d'estudi previ referenciat al `Comparativa_Experiments.ipynb` presentat com a suport del programari, un cop elaborades diverses jornades de partides complexes en formació i avaluades totes de cop lluitant tancades per lligues i encreuaments de *Round-Robin* globals (tots contra tots i analitzant el seu rendiment):
-
-Presenta un factor resolutiu conclusiu final de significat pur d'èxit capgirat superior: el model basat en naturalesa teòrica i empírica pel mètode **DQN d'arrels Scratch o als fins Fine-tune guanyaven i superaven notablement qualsevol variant tancada per estratègies NFSP predefinint l'atzar total de referència pur global.**
-
-Tot i l'alta densitat analítica multi-agent promès del comportament model de la varietat NFSP; aquest gir en l'eficiència es determina tàcitament atès que el Truc tracta jocs d'entitat esporàdics amb un temps d'entitat curta temporal on les accions es veuen limitades al voltant d'erràtics tancats amb molt poc marge establert asimètric. En buscar una política d'equilibri conservador global (l'*Average Policy* pura establerta que tractarà sempre de fugir de l'explosió i buscar estabilitats denses de "passar a ser conservador respecte allò general iterat"), perd avantatge general. En un entorn que en canvi requereix en gran manera llança't contínuament respecte un risc agressiu variable reaccionari o defensivament i de forma ràpida; un agent fort empíric basat a treure rèdit a base maximitzar agressivament d'instints d'errades com genera respectiu l'esgotament elèctric de l'experiència pròpia contra si d'actes d'una vella mecànica estocàstica adaptativa com el DQN (en el que tota actuació és absolutament calculada sobre els Q-Values directes) en resulta un campió tàctic indiscutible guanyant partides i cops d'autoritat de forma immediata gràcies a encerts per sorpresa valents superiors (sumant *win rate* asimètric).
+1. **Eficiència del Preentrenament**: Els models en mode **Frozen** o **Fine-tune** assoleixen victòries molt abans que el mode **Scratch**, confirmant que la transferència de coneixement és efectiva.
+2. **DQN vs NFSP**: En l'entorn del Truc, el **DQN supera el NFSP**. L'agressivitat del DQN en optimitzar els $Q$-values és més eficaç en partides curtes que l'estratègia mitjana conservadora del NFSP.
+3. **Optimització del Fine-tune**: La combinació d'un Learning Rate molt baix per a l'extractor ($1e-5$) i un ritme normal per al cap de decisió ($5e-4$) permet assolir els millors resultats.
 
 ---
+
+- **Per què el NFSP perd avantatge?**: El NFSP busca un Equilibri de Nash mitjançant una "Política Mitjana" (Average Policy) molt conservadora. En el Truc, aquesta cautela "segura" es tradueix en una manca d'agressivitat que permet al DQN dominar les mans clau a base de risc calculat. L'estabilitat del NFSP és ideal per a jocs llargs i complexos como el Poker, però peca de passivitat en el dinamisme del Truc.
 
 ### Contingut del Directori de Treball `RL/`
 
