@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 from joc.entorn.rols.player import TrucPlayer
 from joc.entorn.rols.dealer import TrucDealer
 from joc.entorn.rols.judger import TrucJudger
@@ -96,7 +97,7 @@ class TrucGame:
     def step(self, action):
         self.ultim_guanyador_envit = None
         self.ultim_guanyador_truc = None
-        action_str = ACTION_LIST[action] if isinstance(action, int) else action
+        action_str = ACTION_LIST[action] if isinstance(action, (int, np.integer)) else action
         player = self.players[self.current_player]
         
         # --- LÒGICA DE RESPOSTA ---
@@ -507,3 +508,52 @@ class TrucGame:
         
         self.turn_phase = 0 if self.senyes else 1
         self.response_state = ResponseState.NO_PENDING
+    
+    def clone(self):
+        return copy.deepcopy(self)
+
+    def clone_and_resample(self, observer_id, resample_observer=False):
+        """
+        Retorna una còpia del joc on les cartes desconegudes per al 'observer_id' 
+        han estat remesclades i repartides de nou.
+        Si 'resample_observer' és True, també es remescla la mà de l'observer.
+        Això és la base per a AIVAT (variance reduction).
+        """
+        clone_game = self.clone()
+        
+        # cartes vistes (historial + taula)
+        cartes_vistes = set()
+        for entry in self.hist_cartes:
+            card = entry[-1]
+            cartes_vistes.add(card)
+        for pid, card in self.cartes_ronda:
+            cartes_vistes.add(card)
+        
+        if not resample_observer:
+            for card in self.players[observer_id].hand:
+                cartes_vistes.add(card)
+            
+        # cartes no vistes (disponibles per repatrir)
+        from joc.entorn.cartes_accions import init_joc_cartes
+        cartes_totes = init_joc_cartes()
+        
+        cartes_no_vistes = [c for c in cartes_totes if c not in cartes_vistes]
+        clone_game.np_random.shuffle(cartes_no_vistes)
+        
+        # Repartir
+        for pid in range(self.num_jugadors):
+            if pid == observer_id and not resample_observer:
+                continue
+            
+            num_cards_to_deal = len(self.players[pid].hand)
+            nova_ma = []
+            for _ in range(num_cards_to_deal):
+                if cartes_no_vistes:
+                    nova_ma.append(cartes_no_vistes.pop())
+            
+            clone_game.players[pid].hand = nova_ma
+            clone_game.players[pid].initial_hand = list(nova_ma)
+            
+        clone_game.dealer.cartes = cartes_no_vistes
+        
+        return clone_game
