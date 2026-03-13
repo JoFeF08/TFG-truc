@@ -18,9 +18,8 @@ import numpy as np
 from tqdm import tqdm
 
 from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
-from rlcard.utils import set_seed, reorganize
-
-from joc.entorn import TrucEnv
+from rlcard.utils import set_seed
+from joc.entorn import TrucEnv, reorganize_amb_rewards
 from RL.models.xarxa_unificada import XarxaUnificada
 
 # Silenciar loggers de RLCard
@@ -140,6 +139,7 @@ def init_dqn(env, device, mode, ruta=None):
         replay_memory_size=DQN_MEMORY,
         replay_memory_init_size=DQN_BATCH,
         update_target_estimator_every=DQN_UPDATE_TGT,
+        discount_factor=0.995,
         epsilon_decay_steps=200_000,
         epsilon_end=DQN_EPS_MIN,
         device=device,
@@ -187,6 +187,7 @@ def init_nfsp(env, device, mode, ruta=None):
         reservoir_buffer_capacity=NFSP_RESERVOIR,
         q_replay_memory_size=NFSP_Q_REPLAY,
         q_update_target_estimator_every=NFSP_Q_UPDATE,
+        discount_factor=0.995,
         anticipatory_param=NFSP_ETA,
         device=device,
     )
@@ -267,13 +268,9 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
             opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device, weights_only=True))
             env.set_agents([agent, AgentCongelat(opp_pool_base)])
 
-        # Reward Scheduling
-        progress = ep / episodes
-        current_beta = 0.5 + (0.5 * progress)
-        env.set_reward_beta(current_beta)
 
         traj, payoffs = env.run(is_training=True)
-        traj = reorganize(traj, payoffs)
+        traj = reorganize_amb_rewards(traj, payoffs)
         
         with redirect_stdout(open(os.devnull, 'w')):
             for ts in traj[0]: agent.feed(ts)
@@ -366,13 +363,8 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
     # Bucle d'entrenament
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
-        # Reward Scheduling
-        progress = ep / episodes
-        current_beta = 0.5 + (0.5 * progress)
-        env.set_reward_beta(current_beta)
-
         traj, payoffs = env.run(is_training=True)
-        traj = reorganize(traj, payoffs)
+        traj = reorganize_amb_rewards(traj, payoffs)
 
         with redirect_stdout(open(os.devnull, 'w')):
             for pid, ag in enumerate([p0, p1]):

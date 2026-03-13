@@ -365,9 +365,9 @@ Transforma el diccionari d'estat del joc en un tensor numèric i context de tipu
 L'observació extreta és un diccionari amb dues claus rellevants globals sota la sub-clau `obs`:
 
 1. **`obs_cartes`**: Un tensor 3D de dimensions `(6 canals, 4 pals, 9 rangs)`. Les posicions marcades són valors one-hot a l'índex corresponent.
-2. **`obs_context`**: Un tensor 1D (vector) de 17 dimensions flotants (`(17,)`) amb variables contínues (escalables) i valors one-hot del context.
+2. **`obs_context`**: Un tensor 1D (vector) de 23 dimensions flotants (`(23,)`) amb variables contínues (escalables) i valors one-hot del context.
 
-**Total variables `state_size`**: `6 * 4 * 9 + 17` = **233** mides (vectoritzat directament en sistemes antics RLCard).
+**Total variables `state_size`**: `6 * 4 * 9 + 23` = **239** mides.
 
 ###### 1. Canals de Cartes (`obs_cartes` tensor (6,4,9))
 
@@ -390,6 +390,12 @@ Codificació on-hot segons la utilitat i propietat de destí per cada carta sego
 | 6-9      | `ma_offset`             | Qui és mà (one-hot relatiu)             |
 | 10-13    | `truc_owner_offset`     | Qui ha cantat Truc (one-hot relatiu)      |
 | 14-16    | `envit_owner_offset`    | Qui ha cantat Envit (one-hot relatiu)     |
+| 17       | `rondes_guanyades_prop` | Rondes guanyades propi (`rondes / 3`)    |
+| 18       | `rondes_guanyades_riv`  | Rondes guanyades rival (`rondes / 3`)    |
+| 19       | `winner_r1`             | Guanyador R1 (1.0=jo, -1.0=rival, 0.0=empat/no jugada) |
+| 20       | `winner_r2`             | Guanyador R2 (1.0=jo, -1.0=rival, 0.0=empat/no jugada) |
+| 21       | `envit_accepted`        | 1.0 si acceptat, 0.0 si no               |
+| 22       | `response_state`        | 0.0/0.5/1.0 (NO/TRUC/ENVIT PENDING)      |
 
 ###### Retorn de `_extract_state`
 
@@ -410,15 +416,12 @@ Codificació on-hot segons la utilitat i propietat de destí per cada carta sego
 
 ##### Altres Mètodes
 
-###### `get_payoffs()` i `set_reward_beta()` -> Recompenses Finals
+Les recompenses son el fruit d'una partida (Victòria/Derrota) i de fites intermèdies:
 
-Les recompenses son el fruit final d'una partida (Victòria/Derrota) cap a un sistema esglaonat mitjançant una *Beta* d'adaptació:
-
-```python
-R = sign(delta) * (beta + (1 - beta) * sqrt(|delta| / objectiu_punts))
-```
-
-On `delta` és la diferència de punts entre el jugador i el rival al finalitzar. L'agent que guanyi tindrà payoff positiu, el perdedor negatiu i es pot escalar mitjançant `.set_reward_beta(x)`.
+1. **Reward final (get_payoffs)**: senyal de victòria/derrota normalitzada:
+   `R = sign(delta) * sqrt(|delta| / objectiu_punts)`
+   
+2. **Rewards intermedis (step)**: senyals parcials emesos a cada fi de ronda (±0.07 × pes_ronda), resolució d'envit (±0.05 × pts/8) i resolució de truc (±0.05 × pts/24).
 
 ###### `_decode_action(action_id)` -> Descodificar Acció
 
