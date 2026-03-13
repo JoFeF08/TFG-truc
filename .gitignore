@@ -71,6 +71,7 @@ RL/entrenament/entrenamentEstatTruc/registres/*
 !RL/entrenament/entrenamentEstatTruc/registres/05_03_26_a_les_0015/
 !RL/entrenament/entrenamentEstatTruc/registres/13_03_26_a_les_1909/
 RL/entrenament/entrenamentsUnificats/registres/*
+RL/entrenament/entrenamentRLCard/registres/*
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
@@ -87,3 +88,4 @@ temp/
 # MCP
 .mcp/
 TFG_Doc/.obsidian/*
+
