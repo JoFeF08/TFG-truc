@@ -6,8 +6,7 @@ from datetime import datetime
 from tqdm import tqdm, trange
 try:
     if '__file__' in globals():
-        # Arribar a l'arrel del projecte (TFG-truc) que està 4 nivells amunt
-        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
         sys.path.insert(0, root_path)
     else:
         sys.path.insert(0, os.getcwd())
@@ -30,6 +29,7 @@ MIDA_DATASET    = 200_000
 VAL_SPLIT       = 0.2
 BATCH_SIZE      = 256
 NUM_EPOCHS      = 100
+# NUM_EPOCHS      = 100
 LR              = 0.001
 WEIGHT_DECAY    = 1e-4  # Regularització L2
 PATIENCE        = 10    # Early Stopping
@@ -53,6 +53,9 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+criteri_mse = nn.MSELoss()
+criteri_bce = nn.BCEWithLogitsLoss()
 
 def generar_dataset_estatic(num_mostres: int, env_base=None):
     """
@@ -148,7 +151,7 @@ def entrenar():
 
     model = ModelPreEntrenament().to(DEVICE)
     optimitzador = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimitzador, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimitzador, mode='min', factor=0.5, patience=5)
 
     # Pesos per la Loss (Balanç de caps)
     W_ENVIT = 1.0
@@ -157,7 +160,7 @@ def entrenar():
 
     log_path = LOG_DIR / "preentrenament_log.csv"
     with open(log_path, "w", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow(["epoca", "train_loss", "val_loss", "val_env", "val_truc", "val_acc"])
+        csv.writer(f).writerow(["epoca", "train_loss", "val_loss", "val_env", "val_truc", "val_acc", "lr"])
 
     # Early Stopping state
     best_val_loss = float('inf')
@@ -237,7 +240,7 @@ def entrenar():
         with open(log_path, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([epoca, train_loss_avg, val_loss_avg, val_env_avg, val_truc_avg, val_acc_avg, lr_actual])
         
-        PRINT_CADA = NUM_EPOCHS // 20
+        PRINT_CADA = max(1, NUM_EPOCHS // 20)
         
         if epoca % PRINT_CADA == 0 or epoca == 1 or epoca == NUM_EPOCHS:
             print(f"Epoca {epoca:03d}/{NUM_EPOCHS} | Train Loss: {train_loss_avg:.4f} | Val Loss: {val_loss_avg:.4f} "

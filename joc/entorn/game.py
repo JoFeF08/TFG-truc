@@ -1,4 +1,14 @@
+import sys
+import os
 import numpy as np
+
+try:
+    if '__file__' in globals():
+        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        sys.path.insert(0, root_path)
+except Exception:
+    pass
+
 from joc.entorn.rols.player import TrucPlayer
 from joc.entorn.rols.dealer import TrucDealer
 from joc.entorn.rols.judger import TrucJudger

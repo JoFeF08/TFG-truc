@@ -1,6 +1,16 @@
+import sys
+import os
 import numpy as np
 from collections import OrderedDict
 from rlcard.envs.env import Env
+
+try:
+    if '__file__' in globals():
+        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        sys.path.insert(0, root_path)
+except Exception:
+    pass
+
 from joc.entorn.game import TrucGame
 from joc.entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL, PALS, NUMS, init_joc_cartes
 
@@ -115,7 +125,12 @@ class TrucEnv(Env):
             'senya_as_bord':        None,
             'senya_cegas':          None,
         }
-        for pid, ronda, senya in state.get('hist_senyes', []):
+        for entry in state.get('hist_senyes', []):
+            if len(entry) == 3:
+                pid, ronda, senya = entry
+            else:
+                pid, senya = entry
+            
             if pid == company_pid:
                 carta_senya = SENYA_CARTA_MAP.get(senya)
                 if carta_senya:
