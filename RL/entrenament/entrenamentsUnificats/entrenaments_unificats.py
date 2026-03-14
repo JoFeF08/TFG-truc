@@ -8,8 +8,11 @@ import types
 from collections import deque
 from pathlib import Path
 from datetime import datetime
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 from copy import deepcopy
+
+import multiprocessing as mp
+from functools import partial
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
@@ -17,6 +20,11 @@ import random
 import torch
 import numpy as np
 from tqdm import tqdm
+
+# Silenciar logs
+logging.getLogger().setLevel(logging.ERROR)
+for name in logging.root.manager.loggerDict:
+    logging.getLogger(name).setLevel(logging.ERROR)
 
 from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
 from rlcard.utils import set_seed
@@ -38,31 +46,32 @@ ENV_CONFIG = {
     'verbose': False,
 }
 
-MLP_LAYERS = [1024, 1024, 1024]
+MLP_LAYERS = [256, 128]
 
 # DQN
-DQN_LR          = 1e-3
-DQN_BATCH       = 32768
-DQN_MEMORY      = 2_000_000
-DQN_UPDATE_TGT  = 4000
+DQN_LR          = 5e-4
+DQN_BATCH       = 4096
+DQN_MEMORY      = 1_000_000 
+DQN_UPDATE_TGT  = 2000
 DQN_EPS_MIN     = 0.05
 OPP_UPDATE_TAU  = 0.05
 DQN_TRAIN_EVERY = 64
 
 # NFSP
-NFSP_RL_LR      = 1e-3
-NFSP_SL_LR      = 2e-4
-NFSP_BATCH      = 32768
-NFSP_RESERVOIR  = 2_000_000
-NFSP_Q_REPLAY   = 2_000_000
-NFSP_Q_UPDATE   = 2000
+NFSP_RL_LR      = 5e-4
+NFSP_SL_LR      = 1e-4
+NFSP_BATCH      = 4096
+NFSP_RESERVOIR  = 1_000_000
+NFSP_Q_REPLAY   = 1_000_000
+NFSP_Q_UPDATE   = 1000
 NFSP_ETA        = 0.15
-NFSP_TRAIN_EVERY = 64
+NFSP_TRAIN_EVERY = 128
+USE_BATCH_NORM = True
 
 FINETUNE_LR_COS = 1e-5
-LR_DECAY_FACTOR = 0.5
 POOL_SIZE = 20
-EVALUATE_NUM = 1000
+EVALUATE_NUM = 200
+NUM_WORKERS = 8
 
 class AgentCongelat:
     """Wrapper per usar eval_step"""
@@ -153,7 +162,7 @@ def init_dqn(env, device, mode, ruta=None):
         device=device,
     )
     
-    x = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q")
+    x = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q", use_bn=USE_BATCH_NORM)
     inject_xarxa_dqn(agent, x, mode, DQN_LR)
     
     return agent
@@ -205,10 +214,22 @@ def init_nfsp(env, device, mode, ruta=None):
         device=device,
     )
     
-    q = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q")
-    sl = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "policy")
+    q = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q", use_bn=USE_BATCH_NORM)
+    sl = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "policy", use_bn=USE_BATCH_NORM)
     inject_xarxes_nfsp(agent, q, sl, mode, NFSP_RL_LR, NFSP_SL_LR)
     
+    original_feed = agent.feed
+    agent._sl_counter = 0
+    def fast_feed(ts):
+        agent._sl_counter += 1
+        if agent._sl_counter % NFSP_TRAIN_EVERY == 0:
+            original_feed(ts)
+        else:
+            if hasattr(agent, 'reservoir'):
+                agent.reservoir.add(ts[0]['obs'], ts[1])
+            agent._rl_agent.feed(ts)
+    
+    agent.feed = fast_feed
     return agent
 
 
@@ -310,21 +331,19 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
         train_rewards.append(payoffs[0])
         traj = reorganize_amb_rewards(traj, payoffs)
         
-        with redirect_stdout(open(os.devnull, 'w')):
-            for ts in traj[0]: agent.feed(ts)
+        # Silenciament total
+        with open(os.devnull, 'w') as fnull:
+            with redirect_stdout(fnull), redirect_stderr(fnull):
+                for ts in traj[0]: agent.feed(ts)
 
         # Actualització Polyak suau (Vectoritzada)
         with torch.no_grad():
             for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_polyak_base.q_estimator.qnet.parameters()):
                 target_param.data.lerp_(param.data, OPP_UPDATE_TAU)
 
-        #learning rate
-        if ep in decay_steps:
-            for pg in agent.q_estimator.optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
-            print(f"\nLR Decay: {agent.q_estimator.optimizer.param_groups[-1]['lr']:.2e}")
 
         # Avaluació
-        eval_freq = max(episodes // 200, 250)
+        eval_freq = max(episodes // 40, 2500)
         if ep % eval_freq == 0:
             r, vic_rate = avaluar(eval_env, EVALUATE_NUM)
             vic = round(100 * vic_rate, 1)
@@ -480,21 +499,16 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
         train_rewards.append(payoffs[0])
         traj = reorganize_amb_rewards(traj, payoffs)
 
-        with redirect_stdout(open(os.devnull, 'w')):
-            # Només p0 i p1 aprenen (si p1 és el target)
-            for ts in traj[0]: p0.feed(ts)
-            if target_p1 == p1:
-                for ts in traj[1]: p1.feed(ts)
+        # Silenciament total
+        with open(os.devnull, 'w') as fnull:
+            with redirect_stdout(fnull), redirect_stderr(fnull):
+                for ts in traj[0]: p0.feed(ts)
+                if target_p1 == p1:
+                    for ts in traj[1]: p1.feed(ts)
 
-        # LR Decay
-        if ep in decay_steps:
-            for ag in [p0, p1]:
-                for pg in ag._rl_agent.q_estimator.optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
-                for pg in ag.policy_network_optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
-            print(f"\nLR Decay")
 
         # Avaluació
-        eval_freq = max(episodes // 200, 250)
+        eval_freq = max(episodes // 40, 2500)
         if ep % eval_freq == 0:
             p0.sample_episode_policy(); p1.sample_episode_policy()
             r, vic_rate = avaluar(eval_env, EVALUATE_NUM)

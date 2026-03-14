@@ -15,12 +15,14 @@ COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent / "RL" /
                        "entrenament" / "entrenamentEstatTruc" / "registres" / 
                        "13_03_26_a_les_1909" / "models" / "best_pesos_cos_truc.pth")
 
-def construir_mlp(in_dim, layers, out_dim, final="none"):
-    """Construeix un MLP clàssic (ReLU) per a RLCard"""
+def construir_mlp(in_dim, layers, out_dim, final="none", use_bn=True):
+    """Construeix un MLP clàssic (ReLU) amb Batch Normalization opcional"""
     dims = [in_dim] + layers
     net = []
     for i in range(len(dims) - 1):
         net.append(nn.Linear(dims[i], dims[i + 1]))
+        if use_bn:
+            net.append(nn.BatchNorm1d(dims[i + 1]))
         net.append(nn.ReLU())
     
     net.append(nn.Linear(dims[-1], out_dim))
@@ -34,7 +36,7 @@ class XarxaUnificada(nn.Module):
     Xarxa end-to-end que combina el Feature Extractor (COS) amb un MLP
     per a ser usada directament amb agents de RLCard (DQN/NFSP).
     """
-    def __init__(self, n_actions, mlp_layers, mode, weights=None, device=None, output="q"):
+    def __init__(self, n_actions, mlp_layers, mode, weights=None, device=None, output="q", use_bn=True):
         super().__init__()
         
         self.mode = mode
@@ -68,7 +70,7 @@ class XarxaUnificada(nn.Module):
         else:
             activacio = "none"
 
-        self.mlp = construir_mlp(LATENT_DIM, mlp_layers, n_actions, activacio)
+        self.mlp = construir_mlp(LATENT_DIM, mlp_layers, n_actions, activacio, use_bn=use_bn)
 
         for p in self.mlp.parameters():
             if len(p.data.shape) > 1:
