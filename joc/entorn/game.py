@@ -124,8 +124,8 @@ class TrucGame:
                     mans_p = [p.initial_hand for p in self.players]
                     winner_team = self.judger.guanyador_envits(mans_p, self.ma)
                     pts_env = self.envit_level
-                    self.reward_intermedis[winner_team] += 0.05 * (pts_env / 8.0)
-                    self.reward_intermedis[1-winner_team] -= 0.05 * (pts_env / 8.0)
+                    self.reward_intermedis[winner_team] += 1.0 * (pts_env / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 1.0 * (pts_env / 24.0)
 
                     # Retornar el torn
                     self.current_player = self.turn_player
@@ -135,8 +135,8 @@ class TrucGame:
                     points_won = self.previous_envit_level
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
                     
-                    self.reward_intermedis[winner_team] += 0.05 * (points_won / 8.0)
-                    self.reward_intermedis[1-winner_team] -= 0.05 * (points_won / 8.0)
+                    self.reward_intermedis[winner_team] += 0.5 * (points_won / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 0.5 * (points_won / 24.0)
 
                     self.punts_envit_pendents = (winner_team, points_won, None)
                     self.ultim_guanyador_envit = (winner_team, points_won, None)
@@ -177,8 +177,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_team, pts_truc)
                     
                     # Reward intermedi de truc (fora)
-                    self.reward_intermedis[winner_team] += 0.05 * (pts_truc / 24.0)
-                    self.reward_intermedis[1-winner_team] -= 0.05 * (pts_truc / 24.0)
+                    self.reward_intermedis[winner_team] += 0.5 * (pts_truc / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 0.5 * (pts_truc / 24.0)
 
                     if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
@@ -269,8 +269,8 @@ class TrucGame:
             self.ultim_guanyador_truc = (winner, pts_truc)
             
             # Reward intermedi de truc (fora)
-            self.reward_intermedis[winner] += 0.05 * (pts_truc / 24.0)
-            self.reward_intermedis[1-winner] -= 0.05 * (pts_truc / 24.0)
+            self.reward_intermedis[winner] += 0.5 * (pts_truc / 24.0)
+            self.reward_intermedis[1-winner] -= 0.5 * (pts_truc / 24.0)
 
             if max(self.score) >= self.puntuacio_final:
                 return self.get_state(self.current_player), None
@@ -294,9 +294,8 @@ class TrucGame:
                 pes = self._pes_ronda(self.round_counter, self.ronda_winners)
                 if winner is not None:
                     eq_w = winner % 2
-                    eq_l = 1 - eq_w
-                    self.reward_intermedis[eq_w] += 0.07 * pes
-                    self.reward_intermedis[1-eq_w] -= 0.07 * pes
+                    self.reward_intermedis[eq_w] += 1.0 * pes
+                    self.reward_intermedis[1-eq_w] -= 1.0 * pes
 
                 if winner is not None:
                     self.turn_player = winner
@@ -327,8 +326,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_ma, self.truc_level)
                     
                     # Reward intermedi de truc (guanyador mà)
-                    self.reward_intermedis[winner_ma] += 0.05 * (self.truc_level / 24.0)
-                    self.reward_intermedis[1-winner_ma] -= 0.05 * (self.truc_level / 24.0)
+                    self.reward_intermedis[winner_ma] += 2.0 * (self.truc_level / 24.0)
+                    self.reward_intermedis[1-winner_ma] -= 2.0 * (self.truc_level / 24.0)
 
                     self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
@@ -502,22 +501,21 @@ class TrucGame:
 
     def get_payoffs(self):
         """
-        Retorna els payoffs (recompenses) finals.
-        R = sign(delta) * np.sqrt(abs(delta) / objectiu)
+        Retorna els payoffs (recompenses) finals: +10 per guanyar, -10 per perdre.
         """
         score = self.score
-        objectiu = self.puntuacio_final
         payoffs = []
 
         for pid in range(self.num_jugadors):
             oponent = (pid + 1) % 2
             delta = score[pid] - score[oponent]
             
-            if delta == 0:
-                payoffs.append(0.0)
+            if delta > 0:
+                payoffs.append(10.0)
+            elif delta < 0:
+                payoffs.append(-10.0)
             else:
-                sign = 1.0 if delta > 0 else -1.0
-                payoffs.append(sign * np.sqrt(abs(delta) / objectiu))
+                payoffs.append(0.0)
 
         return payoffs
 

@@ -38,7 +38,7 @@ ENV_CONFIG = {
     'verbose': False,
 }
 
-MLP_LAYERS = [512, 256, 128]
+MLP_LAYERS = [256, 256, 128]
 
 # DQN
 DQN_LR          = 2e-4
@@ -94,13 +94,15 @@ def wrap_env_aplanat(env):
     return env
 
 def avaluar(env, n):
-    total = sum(env.run(is_training=False)[1][0] for _ in range(n))
-    return total / n
+    rewards = [env.run(is_training=False)[1][0] for _ in range(n)]
+    mean_r = np.mean(rewards)
+    win_rate = np.sum(np.array(rewards) > 0) / n
+    return mean_r, win_rate
 
 def get_decay_steps(episodes):
     return [episodes // 4, episodes // 2, 3 * episodes // 4]
 
-def carregar_pesos(agent, path, device):
+def carregar_pesos(agent, path, device, verbose=True):
     """Carrega els pesos d'un agent des d'un fitxer .pt"""
     sd = torch.load(path, map_location=device, weights_only=True)
     if isinstance(agent, NFSPAgent):
@@ -113,7 +115,8 @@ def carregar_pesos(agent, path, device):
         # Per a DQN sol ser el state_dict de l'MLP directament
         q_sd = sd['q_net'] if (isinstance(sd, dict) and 'q_net' in sd) else sd
         agent.q_estimator.qnet.load_state_dict(q_sd)
-    print(f"Pesos de l'MLP carregats correctament des de {os.path.basename(path)}")
+    if verbose:
+        print(f"Pesos de l'MLP carregats correctament des de {os.path.basename(path)}")
 
 
 # Injectem XarxaUnificada a RLCARD
@@ -189,10 +192,12 @@ def init_nfsp(env, device, mode, ruta=None):
         reservoir_buffer_capacity=NFSP_RESERVOIR,
         q_replay_memory_size=NFSP_Q_REPLAY,
         q_update_target_estimator_every=NFSP_Q_UPDATE,
-        discount_factor=0.995,
+        q_discount_factor=0.995,
         anticipatory_param=NFSP_ETA,
-        epsilon_decay_steps=200_000,
-        epsilon_end=DQN_EPS_MIN,
+        q_epsilon_decay_steps=200_000,
+        q_epsilon_end=DQN_EPS_MIN,
+        q_replay_memory_init_size=NFSP_BATCH,
+        q_batch_size=NFSP_BATCH,
         device=device,
     )
     
@@ -218,8 +223,9 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
     opp_polyak_base.q_estimator.qnet.load_state_dict(agent.q_estimator.qnet.state_dict())
     
     # Epsilon decay
-    agent.epsilon_decay_steps = episodes * 200
-    agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, agent.epsilon_decay_steps)
+    eps_start = 0.5 if mode == "finetune" else 1.0
+    agent.epsilon_decay_steps = episodes * 100
+    agent.epsilons = np.linspace(eps_start, DQN_EPS_MIN, agent.epsilon_decay_steps)
     opp_polyak_base.epsilon_decay_steps = agent.epsilon_decay_steps
     opp_polyak_base.epsilons = agent.epsilons
 
@@ -228,6 +234,12 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
     init_path = model_dir / "init.pt"
     torch.save(agent.q_estimator.qnet.state_dict(), init_path)
     model_pool = deque([init_path], maxlen=POOL_SIZE)
+
+    # El cos comença congelat si fem finetuning per no corrompre pesos
+    if mode == "finetune":
+        warmup_eps = int(episodes * 0.15)
+        print(f"[AVÍS] Congelant cos per warm-up del cap ({warmup_eps} eps, 15%)")
+        for p in agent.q_estimator.qnet.cos.parameters(): p.requires_grad = False
 
     env.set_agents([agent, AgentCongelat(opp_polyak_base)])
     
@@ -253,13 +265,14 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
     # Preparar fitxer de logs
     log_file = log_dir / f"dqn_{mode}.csv"
     with open(log_file, "w", newline="") as f:
-        csv.writer(f).writerow(["ep", "reward", "vic%", "best", "is_best", "lr"])
+        csv.writer(f).writerow(["ep", "reward", "vic%", "r_train", "vic_train%", "best", "is_best", "lr"])
 
     print(f"\nIniciant DQN ({mode.upper()}) | {episodes} eps")
     best_r = -999
     
     # Bucle d'entrenament
     random_opponent = RandomAgent(env.num_actions)
+    train_rewards = []
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
         
         #Selecció d'oponent
@@ -279,8 +292,18 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
             opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device, weights_only=True))
             env.set_agents([agent, AgentCongelat(opp_pool_base)])
 
+        # Warm-up: Descongelar cos després del 15% dels episodis
+        warmup_eps = int(episodes * 0.15)
+        if mode == "finetune" and ep == warmup_eps:
+            print(f"\n[Warm-up Finalitzat a l'EP {ep}] Descongelant cos...")
+            for p in agent.q_estimator.qnet.cos.parameters(): p.requires_grad = True
+            # Re-re-inicialitzar optimitzador per incloure tots els paràmetres
+            params = agent.q_estimator.qnet.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=DQN_LR)
+            agent.q_estimator.optimizer = torch.optim.Adam(params)
+
 
         traj, payoffs = env.run(is_training=True)
+        train_rewards.append(payoffs[0])
         traj = reorganize_amb_rewards(traj, payoffs)
         
         with redirect_stdout(open(os.devnull, 'w')):
@@ -299,8 +322,13 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
         # Avaluació
         eval_freq = max(episodes // 200, 250)
         if ep % eval_freq == 0:
-            r = avaluar(eval_env, EVALUATE_NUM)
-            vic = round(100 * (r + 1) / 2, 1)
+            r, vic_rate = avaluar(eval_env, EVALUATE_NUM)
+            vic = round(100 * vic_rate, 1)
+            
+            r_train = np.mean(train_rewards) if train_rewards else 0
+            vic_train = round(100 * np.sum(np.array(train_rewards) > 0) / len(train_rewards), 1) if train_rewards else 0
+            train_rewards = []
+
             lr = agent.q_estimator.optimizer.param_groups[-1]['lr']
 
             if r > best_r:
@@ -312,9 +340,9 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
                 indicador = ""
                 is_best = 0
 
-            tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | LR {lr:.2e}{indicador}")
+            tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | RT {r_train:.3f} | VT {vic_train}% | LR {lr:.2e}{indicador}")
             with open(log_file, "a", newline="") as f:
-                csv.writer(f).writerow([ep, r, vic, best_r, is_best, lr])
+                csv.writer(f).writerow([ep, r, vic, r_train, vic_train, best_r, is_best, lr])
 
         # Guardar checkpoints
         if ep % save_every == 0:
@@ -354,23 +382,25 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
     p1 = init_nfsp(env, device, mode)
     
     # Epsilon decay per a la part RL de l'NFSP
+    eps_start = 0.5 if mode == "finetune" else 1.0
     for ag in [p0, p1]:
-        ag._rl_agent.epsilon_decay_steps = episodes * 200
-        ag._rl_agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, ag._rl_agent.epsilon_decay_steps)
+        ag._rl_agent.epsilon_decay_steps = episodes * 20
+        ag._rl_agent.epsilons = np.linspace(eps_start, DQN_EPS_MIN, ag._rl_agent.epsilon_decay_steps)
 
     # Oponent Pool
     opp_pool_base = init_nfsp(env, device, mode)
-    registres_dir = Path(__file__).parent / "registres"
-    model_pool = list(registres_dir.glob("**/models/final.pt"))
-    
-    # Afegim estat inicial al pool
     init_path = model_dir / "init_nfsp.pt"
     torch.save({'q': p0._rl_agent.q_estimator.qnet.state_dict(), 
                 'sl': p0.policy_network.state_dict()}, init_path)
-    if not model_pool:
-        model_pool = [init_path]
-    else:
-        model_pool.append(init_path)
+    model_pool = deque([init_path], maxlen=POOL_SIZE)
+
+    # Warm-up
+    if mode == "finetune":
+        warmup_eps = int(episodes * 0.15)
+        print(f"[AVÍS] Congelant cos per warm-up del cap ({warmup_eps} eps, 15%)")
+        for ag in [p0, p1]:
+            for p in ag._rl_agent.q_estimator.qnet.cos.parameters(): p.requires_grad = False
+            for p in ag.policy_network.cos.parameters(): p.requires_grad = False
 
     env.set_agents([p0, p1])
     
@@ -391,18 +421,19 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
     eval_env.set_agents([p0, eval_agent])
 
     decay_steps = get_decay_steps(episodes)
-    save_every = max(episodes // 10, 1000)
+    save_every = max(episodes // 200, 250)
 
     # Inicialitzar CSV
     log_file = log_dir / f"nfsp_{mode}.csv"
     with open(log_file, "w", newline="") as f:
-        csv.writer(f).writerow(["ep", "r0", "vic0", "m0", "m1", "best", "is_best"])
+        csv.writer(f).writerow(["ep", "r0", "vic0", "r0_train", "vic0_train%", "m0", "m1", "best", "is_best"])
 
     print(f"\nIniciant NFSP ({mode.upper()}) | {episodes} eps")
     best_r = -999
     random_opponent = RandomAgent(env.num_actions)
 
     # Bucle d'entrenament
+    train_rewards = []
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
         
         # Selecció d'oponent
@@ -414,26 +445,42 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
         if chance < 0.20:
             target_p1 = random_opponent
         elif chance < 0.25 and best_path.exists():
-            carregar_pesos(opp_pool_base, best_path, device)
+            carregar_pesos(opp_pool_base, best_path, device, verbose=False)
             target_p1 = AgentCongelat(opp_pool_base)
         elif chance < 0.60:
             target_p1 = p1 # 35% darrer p1
         else:
             # 40% contra un històric
             past_path = random.choice(model_pool)
-            carregar_pesos(opp_pool_base, past_path, device)
+            carregar_pesos(opp_pool_base, past_path, device, verbose=False)
             target_p1 = AgentCongelat(opp_pool_base)
+
+        # Warm-up
+        warmup_eps = int(episodes * 0.15)
+        if mode == "finetune" and ep == warmup_eps:
+            print(f"\n[Warm-up Finalitzat a l'EP {ep}] Descongelant cossos...")
+            for ag in [p0, p1]:
+                # Descongelar Q i Policy
+                for p in ag._rl_agent.q_estimator.qnet.cos.parameters(): p.requires_grad = True
+                for p in ag.policy_network.cos.parameters(): p.requires_grad = True
+                
+                # Re-inicialitzar optimitzadors
+                p_q = ag._rl_agent.q_estimator.qnet.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=NFSP_RL_LR)
+                ag._rl_agent.q_estimator.optimizer = torch.optim.Adam(p_q)
+                p_sl = ag.policy_network.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=NFSP_SL_LR)
+                ag.policy_network_optimizer = torch.optim.Adam(p_sl)
 
         env.set_agents([p0, target_p1])
 
         traj, payoffs = env.run(is_training=True)
+        train_rewards.append(payoffs[0])
         traj = reorganize_amb_rewards(traj, payoffs)
 
         with redirect_stdout(open(os.devnull, 'w')):
             # Només p0 i p1 aprenen (si p1 és el target)
-            p0.feed(traj[0])
+            for ts in traj[0]: p0.feed(ts)
             if target_p1 == p1:
-                p1.feed(traj[1])
+                for ts in traj[1]: p1.feed(ts)
 
         # LR Decay
         if ep in decay_steps:
@@ -446,8 +493,13 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
         eval_freq = max(episodes // 200, 250)
         if ep % eval_freq == 0:
             p0.sample_episode_policy(); p1.sample_episode_policy()
-            r = avaluar(eval_env, EVALUATE_NUM)
-            vic = round(100 * (r + 1) / 2, 1)
+            r, vic_rate = avaluar(eval_env, EVALUATE_NUM)
+            vic = round(100 * vic_rate, 1)
+            
+            r_train = np.mean(train_rewards) if train_rewards else 0
+            vic_train = round(100 * np.sum(np.array(train_rewards) > 0) / len(train_rewards), 1) if train_rewards else 0
+            train_rewards = []
+
             m0, m1 = p0._mode[0], p1._mode[0]
 
             if r > best_r:
@@ -461,9 +513,9 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
                 indicador = ""
                 is_best = 0
 
-            tqdm.write(f"EP {ep} | R0 {r:.3f} | V0 {vic}% | MODES {m0}-{m1}{indicador}")
+            tqdm.write(f"EP {ep} | R0 {r:.3f} | V0 {vic}% | RT0 {r_train:.3f} | VT0 {vic_train}% | MODES {m0}-{m1}{indicador}")
             with open(log_file, "a", newline="") as f:
-                csv.writer(f).writerow([ep, r, vic, m0, m1, best_r, is_best])
+                csv.writer(f).writerow([ep, r, vic, r_train, vic_train, m0, m1, best_r, is_best])
 
         # Guardar checkpoints
         if ep % save_every == 0:
