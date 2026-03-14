@@ -38,24 +38,26 @@ ENV_CONFIG = {
     'verbose': False,
 }
 
-MLP_LAYERS = [256, 256, 128]
+MLP_LAYERS = [1024, 1024, 1024]
 
 # DQN
-DQN_LR          = 2e-4
-DQN_BATCH       = 256
-DQN_MEMORY      = 500_000
-DQN_UPDATE_TGT  = 1000
+DQN_LR          = 1e-3
+DQN_BATCH       = 32768
+DQN_MEMORY      = 2_000_000
+DQN_UPDATE_TGT  = 4000
 DQN_EPS_MIN     = 0.05
-OPP_UPDATE_TAU  = 0.05  # Factor per a l'actualització suau de l'oponent
+OPP_UPDATE_TAU  = 0.05
+DQN_TRAIN_EVERY = 64
 
 # NFSP
-NFSP_RL_LR      = 5e-4
-NFSP_SL_LR      = 1e-4
-NFSP_BATCH      = 256
-NFSP_RESERVOIR  = 500_000
-NFSP_Q_REPLAY   = 500_000
-NFSP_Q_UPDATE   = 500
+NFSP_RL_LR      = 1e-3
+NFSP_SL_LR      = 2e-4
+NFSP_BATCH      = 32768
+NFSP_RESERVOIR  = 2_000_000
+NFSP_Q_REPLAY   = 2_000_000
+NFSP_Q_UPDATE   = 2000
 NFSP_ETA        = 0.15
+NFSP_TRAIN_EVERY = 64
 
 FINETUNE_LR_COS = 1e-5
 LR_DECAY_FACTOR = 0.5
@@ -147,6 +149,7 @@ def init_dqn(env, device, mode, ruta=None):
         discount_factor=0.995,
         epsilon_decay_steps=200_000,
         epsilon_end=DQN_EPS_MIN,
+        train_every=32,
         device=device,
     )
     
@@ -198,6 +201,7 @@ def init_nfsp(env, device, mode, ruta=None):
         q_epsilon_end=DQN_EPS_MIN,
         q_replay_memory_init_size=NFSP_BATCH,
         q_batch_size=NFSP_BATCH,
+        q_train_every=32,
         device=device,
     )
     
@@ -309,10 +313,10 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
         with redirect_stdout(open(os.devnull, 'w')):
             for ts in traj[0]: agent.feed(ts)
 
-        # Actualització Polyak suau
+        # Actualització Polyak suau (Vectoritzada)
         with torch.no_grad():
             for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_polyak_base.q_estimator.qnet.parameters()):
-                target_param.data.copy_(OPP_UPDATE_TAU * param.data + (1.0 - OPP_UPDATE_TAU) * target_param.data)
+                target_param.data.lerp_(param.data, OPP_UPDATE_TAU)
 
         #learning rate
         if ep in decay_steps:
