@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 
 import torch
@@ -8,9 +9,9 @@ from RL.models.xarxa_truc import CosMultiInput
 # Dimensions fixes
 LATENT_DIM = 128
 OBS_CARTES_SHAPE = (6, 4, 9)
-OBS_CONTEXT_SIZE = 17
+OBS_CONTEXT_SIZE = 23
 
-COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent / 
+COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent / "RL" / 
                        "entrenament" / "entrenamentEstatTruc" / "registres" / 
                        "13_03_26_a_les_1909" / "models" / "best_pesos_cos_truc.pth")
 

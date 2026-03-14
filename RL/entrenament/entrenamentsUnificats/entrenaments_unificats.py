@@ -5,12 +5,13 @@ import csv
 import shutil
 import logging
 import types
+from collections import deque
 from pathlib import Path
 from datetime import datetime
 from contextlib import redirect_stdout
 from copy import deepcopy
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 import random
 import torch
@@ -37,27 +38,28 @@ ENV_CONFIG = {
     'verbose': False,
 }
 
-MLP_LAYERS = [256, 256]
+MLP_LAYERS = [512, 256, 128]
 
 # DQN
 DQN_LR          = 2e-4
 DQN_BATCH       = 256
-DQN_MEMORY      = 200_000
+DQN_MEMORY      = 500_000
 DQN_UPDATE_TGT  = 1000
-DQN_EPS_MIN     = 0.1
+DQN_EPS_MIN     = 0.05
 OPP_UPDATE_TAU  = 0.05  # Factor per a l'actualització suau de l'oponent
 
 # NFSP
 NFSP_RL_LR      = 5e-4
-NFSP_SL_LR      = 5e-4
+NFSP_SL_LR      = 1e-4
 NFSP_BATCH      = 256
-NFSP_RESERVOIR  = 100_000
-NFSP_Q_REPLAY   = 100_000
+NFSP_RESERVOIR  = 500_000
+NFSP_Q_REPLAY   = 500_000
 NFSP_Q_UPDATE   = 500
-NFSP_ETA        = 0.3
+NFSP_ETA        = 0.15
 
 FINETUNE_LR_COS = 1e-5
 LR_DECAY_FACTOR = 0.5
+POOL_SIZE = 20
 EVALUATE_NUM = 1000
 
 class AgentCongelat:
@@ -189,6 +191,8 @@ def init_nfsp(env, device, mode, ruta=None):
         q_update_target_estimator_every=NFSP_Q_UPDATE,
         discount_factor=0.995,
         anticipatory_param=NFSP_ETA,
+        epsilon_decay_steps=200_000,
+        epsilon_end=DQN_EPS_MIN,
         device=device,
     )
     
@@ -201,27 +205,29 @@ def init_nfsp(env, device, mode, ruta=None):
 
 
 # Entrenaments
-def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
+def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path=None):
     
     env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
     eval_env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
 
-    # Agent principal configuració
+    # Agent principal
     agent = init_dqn(env, device, mode)
-    agent.epsilon_decay_steps = episodes
-    agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, agent.epsilon_decay_steps)
-
+    
     # Oponent Polyak
     opp_polyak_base = init_dqn(env, device, mode)
     opp_polyak_base.q_estimator.qnet.load_state_dict(agent.q_estimator.qnet.state_dict())
     
+    # Epsilon decay
+    agent.epsilon_decay_steps = episodes * 200
+    agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, agent.epsilon_decay_steps)
+    opp_polyak_base.epsilon_decay_steps = agent.epsilon_decay_steps
+    opp_polyak_base.epsilons = agent.epsilons
+
     # Oponent Pool
     opp_pool_base = init_dqn(env, device, mode)
-    
-    # comença amb l'estat inicial
     init_path = model_dir / "init.pt"
     torch.save(agent.q_estimator.qnet.state_dict(), init_path)
-    model_pool = [init_path]
+    model_pool = deque([init_path], maxlen=POOL_SIZE)
 
     env.set_agents([agent, AgentCongelat(opp_polyak_base)])
     
@@ -258,12 +264,17 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
         
         #Selecció d'oponent
         chance = random.random()
+        best_path = model_dir / "best.pt"
         if chance < 0.20:
             env.set_agents([agent, random_opponent]) # 20% contra Random
+        elif chance < 0.25 and best_path.exists():
+            # 5% contra el millor model
+            opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(best_path, map_location=device, weights_only=True))
+            env.set_agents([agent, AgentCongelat(opp_pool_base)])
         elif chance < 0.60:
-            env.set_agents([agent, AgentCongelat(opp_polyak_base)]) # 40% contra Polyak (Latest)
+            env.set_agents([agent, AgentCongelat(opp_polyak_base)]) # 35% contra Polyak
         else:
-            # 40% contra una versió random del pool
+            # 40% contra una versió random
             past_path = random.choice(model_pool)
             opp_pool_base.q_estimator.qnet.load_state_dict(torch.load(past_path, map_location=device, weights_only=True))
             env.set_agents([agent, AgentCongelat(opp_pool_base)])
@@ -274,6 +285,11 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
         
         with redirect_stdout(open(os.devnull, 'w')):
             for ts in traj[0]: agent.feed(ts)
+
+        # Actualització Polyak suau
+        with torch.no_grad():
+            for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_polyak_base.q_estimator.qnet.parameters()):
+                target_param.data.copy_(OPP_UPDATE_TAU * param.data + (1.0 - OPP_UPDATE_TAU) * target_param.data)
 
         #learning rate
         if ep in decay_steps:
@@ -296,11 +312,6 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
                 indicador = ""
                 is_best = 0
 
-            # Actualització suau de l'oponent Polyak
-            with torch.no_grad():
-                for param, target_param in zip(agent.q_estimator.qnet.parameters(), opp_polyak_base.q_estimator.qnet.parameters()):
-                    target_param.data.copy_(OPP_UPDATE_TAU * param.data + (1.0 - OPP_UPDATE_TAU) * target_param.data)
-
             tqdm.write(f"EP {ep} | R {r:.3f} | V {vic}% | LR {lr:.2e}{indicador}")
             with open(log_file, "a", newline="") as f:
                 csv.writer(f).writerow([ep, r, vic, best_r, is_best, lr])
@@ -309,6 +320,17 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
         if ep % save_every == 0:
             path = model_dir / f"ep{ep}.pt"
             torch.save(agent.q_estimator.qnet.state_dict(), path)
+            
+            # FIFO 
+            if len(model_pool) >= POOL_SIZE:
+                old_path = model_pool.popleft()
+            
+                if old_path.exists() and old_path.name not in ["init.pt", "best.pt", "final.pt"]:
+                    try:
+                        old_path.unlink()
+                    except Exception as e:
+                        print(f"Avís: No s'ha pogut esborrar {old_path.name}: {e}")
+            
             model_pool.append(path)
 
     # Guardar final
@@ -316,14 +338,13 @@ def run_dqn(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     if (model_dir / "best.pt").exists(): shutil.copy2(model_dir / "best.pt", final)
     else: torch.save(agent.q_estimator.qnet.state_dict(), final)
 
-    # Netejar pesos intermedis
     for p in model_dir.glob("*.pt"):
         if p.name not in ["final.pt", "best.pt"]:
             p.unlink()
     print(f"Pesos intermedis esborrats. Només queden 'final.pt' i 'best.pt'.")
 
 
-def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
+def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path=None):
     
     env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
     eval_env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
@@ -332,6 +353,25 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
     p0 = init_nfsp(env, device, mode)
     p1 = init_nfsp(env, device, mode)
     
+    # Epsilon decay per a la part RL de l'NFSP
+    for ag in [p0, p1]:
+        ag._rl_agent.epsilon_decay_steps = episodes * 200
+        ag._rl_agent.epsilons = np.linspace(1.0, DQN_EPS_MIN, ag._rl_agent.epsilon_decay_steps)
+
+    # Oponent Pool
+    opp_pool_base = init_nfsp(env, device, mode)
+    registres_dir = Path(__file__).parent / "registres"
+    model_pool = list(registres_dir.glob("**/models/final.pt"))
+    
+    # Afegim estat inicial al pool
+    init_path = model_dir / "init_nfsp.pt"
+    torch.save({'q': p0._rl_agent.q_estimator.qnet.state_dict(), 
+                'sl': p0.policy_network.state_dict()}, init_path)
+    if not model_pool:
+        model_pool = [init_path]
+    else:
+        model_pool.append(init_path)
+
     env.set_agents([p0, p1])
     
     # Configuració de l'avaluació
@@ -360,15 +400,40 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
     print(f"\nIniciant NFSP ({mode.upper()}) | {episodes} eps")
     best_r = -999
+    random_opponent = RandomAgent(env.num_actions)
 
     # Bucle d'entrenament
     for ep in tqdm(range(1, episodes + 1), desc="Train", unit="ep"):
+        
+        # Selecció d'oponent
+        chance = random.random()
+        best_path = model_dir / "best_p0.pt"
+        
+        target_p1 = p1 # Per defecte juga contra l'altre agent NFSP que aprèn
+        
+        if chance < 0.20:
+            target_p1 = random_opponent
+        elif chance < 0.25 and best_path.exists():
+            carregar_pesos(opp_pool_base, best_path, device)
+            target_p1 = AgentCongelat(opp_pool_base)
+        elif chance < 0.60:
+            target_p1 = p1 # 35% darrer p1
+        else:
+            # 40% contra un històric
+            past_path = random.choice(model_pool)
+            carregar_pesos(opp_pool_base, past_path, device)
+            target_p1 = AgentCongelat(opp_pool_base)
+
+        env.set_agents([p0, target_p1])
+
         traj, payoffs = env.run(is_training=True)
         traj = reorganize_amb_rewards(traj, payoffs)
 
         with redirect_stdout(open(os.devnull, 'w')):
-            for pid, ag in enumerate([p0, p1]):
-                for ts in traj[pid]: ag.feed(ts)
+            # Només p0 i p1 aprenen (si p1 és el target)
+            p0.feed(traj[0])
+            if target_p1 == p1:
+                p1.feed(traj[1])
 
         # LR Decay
         if ep in decay_steps:
@@ -402,9 +467,18 @@ def run_nfsp(mode, episodes, model_dir, log_dir, device, eval_model_path=None):
 
         # Guardar checkpoints
         if ep % save_every == 0:
-            for i, ag in enumerate([p0, p1]):
-                torch.save({'q': ag._rl_agent.q_estimator.qnet.state_dict(), 
-                            'sl': ag.policy_network.state_dict()}, model_dir / f"ep{ep}_p{i}.pt")
+            path = model_dir / f"ep{ep}_p0.pt"
+            torch.save({'q': p0._rl_agent.q_estimator.qnet.state_dict(), 
+                        'sl': p0.policy_network.state_dict()}, path)
+            
+            # Gestionem FIFO
+            if len(model_pool) >= POOL_SIZE:
+                old_path = model_pool.pop(0) if isinstance(model_pool, list) else model_pool.popleft()
+                if os.path.exists(old_path) and "init" not in str(old_path) and "best" not in str(old_path):
+                    try: os.unlink(old_path)
+                    except: pass
+            
+            model_pool.append(path)
 
     
     # Playoff per triar el millor p0 o p1
@@ -454,7 +528,7 @@ def main():
     args = parser.parse_args()
 
     set_seed(SEED)
-    # Configuració GPU i rendiment PyTorch
+    # Configuració GPU
     if torch.cuda.is_available():
         device = torch.device("cuda")
         gpu_name = torch.cuda.get_device_name(0)
@@ -469,16 +543,19 @@ def main():
         print("[AVÍS] GPU no disponible, usant CPU.")
     
     tag = f"{args.agent}_{args.mode}_{datetime.now().strftime('%d%m_%H%M')}"
+    
+    
+    # Guardar
     run_dir = Path(__file__).parent / "registres" / tag
     model_dir, log_dir = run_dir / "models", run_dir / "logs"
-    model_dir.mkdir(parents=True); log_dir.mkdir(parents=True)
+    model_dir.mkdir(parents=True, exist_ok=True); log_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Guardant a: {run_dir}")
 
     if args.agent == "dqn":
-        run_dqn(args.mode, args.episodes, model_dir, log_dir, device, args.eval_model)
+        run_dqn(args.mode, args.episodes, run_dir, model_dir, log_dir, device, args.eval_model)
     else:
-        run_nfsp(args.mode, args.episodes, model_dir, log_dir, device, args.eval_model)
+        run_nfsp(args.mode, args.episodes, run_dir, model_dir, log_dir, device, args.eval_model)
 
 if __name__ == "__main__":
     main()

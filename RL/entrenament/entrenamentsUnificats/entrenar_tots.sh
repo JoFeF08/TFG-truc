@@ -16,7 +16,7 @@ echo ""
 
 # Llista d'agents i modes per iterar
 AGENTS=("nfsp" "dqn")
-MODES=("frozen" "finetune" "scratch")
+MODES=("finetune" "scratch")
 
 # Bucle principal
 for AGENT in "${AGENTS[@]}"; do

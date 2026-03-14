@@ -38,8 +38,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-MODEL_PATH = resource_path(os.path.join("RL", "models", "best.npz"))
-TIPUS_AGENT = "numpy_dqn"
+MODEL_PATH = resource_path(os.path.join("RL", "entrenament", "entrenamentsUnificats", "registres", "mes_capes", "dqn_finetune_1303_2334", "models", "best.pt"))
+TIPUS_AGENT = "dqn"
 
 config = {
     "num_jugadors": 2,
@@ -48,7 +48,12 @@ config = {
     "puntuacio_final": 24,
     "tipus_jugadors": {
         0: {"tipus": "huma"},
-        1: {"tipus": TIPUS_AGENT, "ruta": MODEL_PATH, "amb_cos": True},
+        1: {
+            "tipus": TIPUS_AGENT, 
+            "ruta": MODEL_PATH, 
+            "amb_cos": True,
+            "hidden_layers": [512, 512, 256]
+        },
     },
 }
 
