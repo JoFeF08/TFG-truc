@@ -41,12 +41,13 @@ SEED = 42
 ENV_CONFIG = {
     'num_jugadors': 2,
     'cartes_jugador': 3,
-    'puntuacio_final': 12,
+    'puntuacio_final': 24,
     'seed': SEED,
     'verbose': False,
 }
 
 MLP_LAYERS = [512, 512]
+MLP_LAYERS_NFSP_SL = [1024, 512]
 
 # DQN
 DQN_LR          = 5e-4
@@ -72,7 +73,6 @@ FINETUNE_LR_COS = 1e-5
 LR_DECAY_FACTOR = 0.5
 POOL_SIZE = 20
 EVALUATE_NUM = 200
-NUM_WORKERS = 8
 
 class AgentCongelat:
     """Wrapper per usar eval_step"""
@@ -216,7 +216,7 @@ def init_nfsp(env, device, mode, ruta=None):
     )
     
     q = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q", use_bn=USE_BATCH_NORM)
-    sl = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "policy", use_bn=USE_BATCH_NORM)
+    sl = XarxaUnificada(env.num_actions, MLP_LAYERS_NFSP_SL, mode, ruta, device, "policy", use_bn=USE_BATCH_NORM)
     inject_xarxes_nfsp(agent, q, sl, mode, NFSP_RL_LR, NFSP_SL_LR)
     
     original_feed = agent.feed
@@ -453,7 +453,7 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
     save_every = max(episodes // 200, 250)
 
     # Oponents Experts (DQN externs)
-    experts_dir = Path(__file__).parent / "oponents_experts"
+    experts_dir = Path(__file__).parent / "millors_dqn"
     experts_dir.mkdir(exist_ok=True)
     expert_models = list(experts_dir.glob("*.pt"))
     if expert_models:
@@ -477,20 +477,20 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
         best_path = model_dir / "best_p0.pt"
         
         if chance < 0.05:
-            target_p1 = random_opponent     # 5% contra Random
-        elif chance < 0.15 and expert_models:
-            # 10% contra un Expert DQN de la carpeta
+            target_p1 = random_opponent # 5% contra Random
+        elif chance < 0.25 and expert_models:
+            # 20% contra un Expert DQN de la carpeta
             past_path = random.choice(expert_models)
             try:
                 carregar_pesos(opp_pool_base, past_path, device, verbose=False)
                 target_p1 = AgentCongelat(opp_pool_base)
             except:
-                target_p1 = p1 # Fallback si falla el fitxer
-        elif chance < 0.85:
-            target_p1 = p1                  # 70% SELF-PLAY ACTIU
+                target_p1 = p1 #si falla
+        elif chance < 0.95:
+            target_p1 = p1 # 70% SELF-PLAY ACTIU
         else:
-            # 15% contra el millor o un històric
-            if best_path.exists() and random.random() < 0.5:
+            # 5% contra el millor o un històric
+            if best_path.exists() and random.random() < 0.25:
                 carregar_pesos(opp_pool_base, best_path, device, verbose=False)
                 target_p1 = AgentCongelat(opp_pool_base)
             else:
