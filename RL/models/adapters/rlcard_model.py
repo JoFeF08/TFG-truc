@@ -54,6 +54,9 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         raise FileNotFoundError(f"No s'ha trobat el model NFSP a: {ruta}")
 
     hidden_layers = spec.get("hidden_layers", _DEFAULT_HIDDEN_LAYERS)
+    hidden_layers_q = spec.get("hidden_layers_q", hidden_layers)
+    hidden_layers_sl = spec.get("hidden_layers_sl", hidden_layers)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     use_bn = spec.get("use_bn", True)
@@ -65,14 +68,14 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     agent = NFSPAgent(
         num_actions=env_wrapped.num_actions,
         state_shape=env_wrapped.state_shape[0],
-        hidden_layers_sizes=hidden_layers,
-        q_mlp_layers=hidden_layers,
+        hidden_layers_sizes=hidden_layers_sl,
+        q_mlp_layers=hidden_layers_q,
         device=device,
     )
 
     # Xarxes unificades (mode scratch perquè carregarem pesos del checkpoint)
-    q_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="q", use_bn=use_bn)
-    sl_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="policy", use_bn=use_bn)
+    q_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers_q, "scratch", device=device, output="q", use_bn=use_bn)
+    sl_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers_sl, "scratch", device=device, output="policy", use_bn=use_bn)
 
     # Carregar pesos
     checkpoint = torch.load(ruta, map_location=device, weights_only=True)
