@@ -99,6 +99,11 @@ class XarxaUnificada(nn.Module):
             z = self.cos(cartes, context)
 
         #model
+        if self.training and obs.shape[0] == 1:
+            self.mlp.eval()
+            out = self.mlp(z)
+            self.mlp.train()
+            return out
         return self.mlp(z)
 
     def get_param_groups(self, lr_cos=1e-5, lr_mlp=5e-4):

@@ -46,7 +46,7 @@ ENV_CONFIG = {
     'verbose': False,
 }
 
-MLP_LAYERS = [256, 128]
+MLP_LAYERS = [512, 512]
 
 # DQN
 DQN_LR          = 5e-4
@@ -59,16 +59,17 @@ DQN_TRAIN_EVERY = 64
 
 # NFSP
 NFSP_RL_LR      = 5e-4
-NFSP_SL_LR      = 1e-4
+NFSP_SL_LR      = 2e-4
 NFSP_BATCH      = 4096
 NFSP_RESERVOIR  = 1_000_000
 NFSP_Q_REPLAY   = 1_000_000
 NFSP_Q_UPDATE   = 1000
-NFSP_ETA        = 0.15
-NFSP_TRAIN_EVERY = 128
+NFSP_ETA        = 0.25
+NFSP_TRAIN_EVERY = 64
 USE_BATCH_NORM = True
 
 FINETUNE_LR_COS = 1e-5
+LR_DECAY_FACTOR = 0.5
 POOL_SIZE = 20
 EVALUATE_NUM = 200
 NUM_WORKERS = 8
@@ -187,10 +188,10 @@ def inject_xarxes_nfsp(agent, q_net, sl_net, mode, rl_lr, sl_lr):
     agent.policy_network = sl_net
     if mode == "finetune":
         p_sl = sl_net.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=sl_lr)
-        agent.policy_network_optimizer = torch.optim.Adam(p_sl)
+        agent.policy_network_optimizer = torch.optim.Adam(p_sl, weight_decay=1e-5)
     else:
         p_sl = filter(lambda p: p.requires_grad, sl_net.parameters())
-        agent.policy_network_optimizer = torch.optim.Adam(p_sl, lr=sl_lr)
+        agent.policy_network_optimizer = torch.optim.Adam(p_sl, lr=sl_lr, weight_decay=1e-5)
 
 def init_nfsp(env, device, mode, ruta=None):
     agent = NFSPAgent(
@@ -342,6 +343,11 @@ def run_dqn(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_path
                 target_param.data.lerp_(param.data, OPP_UPDATE_TAU)
 
 
+        # Learning Rate Decay (Darrer 20% per polir)
+        if ep == int(episodes * 0.80):
+            for pg in agent.q_estimator.optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
+            print(f"\n[LR DECAY] Baixant LR a {agent.q_estimator.optimizer.param_groups[-1]['lr']:.2e} per a la fase final")
+
         # Avaluació
         eval_freq = max(episodes // 40, 2500)
         if ep % eval_freq == 0:
@@ -446,6 +452,13 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
     decay_steps = get_decay_steps(episodes)
     save_every = max(episodes // 200, 250)
 
+    # Oponents Experts (DQN externs)
+    experts_dir = Path(__file__).parent / "oponents_experts"
+    experts_dir.mkdir(exist_ok=True)
+    expert_models = list(experts_dir.glob("*.pt"))
+    if expert_models:
+        print(f"[EXPERTS] S'han trobat {len(expert_models)} oponents experts per a l'entrenament.")
+    
     # Inicialitzar CSV
     log_file = log_dir / f"nfsp_{mode}.csv"
     with open(log_file, "w", newline="") as f:
@@ -463,20 +476,27 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
         chance = random.random()
         best_path = model_dir / "best_p0.pt"
         
-        target_p1 = p1 # Per defecte juga contra l'altre agent NFSP que aprèn
-        
-        if chance < 0.20:
-            target_p1 = random_opponent
-        elif chance < 0.25 and best_path.exists():
-            carregar_pesos(opp_pool_base, best_path, device, verbose=False)
-            target_p1 = AgentCongelat(opp_pool_base)
-        elif chance < 0.60:
-            target_p1 = p1 # 35% darrer p1
+        if chance < 0.05:
+            target_p1 = random_opponent     # 5% contra Random
+        elif chance < 0.15 and expert_models:
+            # 10% contra un Expert DQN de la carpeta
+            past_path = random.choice(expert_models)
+            try:
+                carregar_pesos(opp_pool_base, past_path, device, verbose=False)
+                target_p1 = AgentCongelat(opp_pool_base)
+            except:
+                target_p1 = p1 # Fallback si falla el fitxer
+        elif chance < 0.85:
+            target_p1 = p1                  # 70% SELF-PLAY ACTIU
         else:
-            # 40% contra un històric
-            past_path = random.choice(model_pool)
-            carregar_pesos(opp_pool_base, past_path, device, verbose=False)
-            target_p1 = AgentCongelat(opp_pool_base)
+            # 15% contra el millor o un històric
+            if best_path.exists() and random.random() < 0.5:
+                carregar_pesos(opp_pool_base, best_path, device, verbose=False)
+                target_p1 = AgentCongelat(opp_pool_base)
+            else:
+                past_path = random.choice(model_pool)
+                carregar_pesos(opp_pool_base, past_path, device, verbose=False)
+                target_p1 = AgentCongelat(opp_pool_base)
 
         # Warm-up
         warmup_eps = int(episodes * 0.15)
@@ -506,6 +526,13 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
                 if target_p1 == p1:
                     for ts in traj[1]: p1.feed(ts)
 
+
+        # Learning Rate Decay (Darrer 20% per polir)
+        if ep == int(episodes * 0.80):
+            for ag in [p0, p1]:
+                for pg in ag._rl_agent.q_estimator.optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
+                for pg in ag.policy_network_optimizer.param_groups: pg['lr'] *= LR_DECAY_FACTOR
+            print(f"\n[LR DECAY] Baixant LR a la fase final per a màxima estabilitat")
 
         # Avaluació
         eval_freq = max(episodes // 40, 2500)
@@ -551,13 +578,7 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
             model_pool.append(path)
 
     
-    # Playoff per triar el millor p0 o p1
-    print("\nPlayoff final P0 vs P1...")
-    
-    # Carreguem els millors
-    b0 = init_nfsp(env, device, mode)
-    b1 = init_nfsp(env, device, mode)
-    
+    # Guardar millors models finals
     p0_path = model_dir / "best_p0.pt"
     if not p0_path.exists():
         torch.save({'q': p0._rl_agent.q_estimator.qnet.state_dict(), 'sl': p0.policy_network.state_dict()}, p0_path)
@@ -566,20 +587,8 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
     if not p1_path.exists():
         torch.save({'q': p1._rl_agent.q_estimator.qnet.state_dict(), 'sl': p1.policy_network.state_dict()}, p1_path)
 
-    carregar_pesos(b0, p0_path, device)
-    carregar_pesos(b1, p1_path, device)
-
-    play_env = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
-    wins = [0, 0]
-    for _ in range(1000):
-        play_env.set_agents([b0, b1] if _ % 2 == 0 else [b1, b0])
-        _, p = play_env.run(False)
-        if (p[0] > p[1] if _ % 2 == 0 else p[1] > p[0]): wins[0] += 1
-        else: wins[1] += 1
-    
-    winner = 0 if wins[0] >= wins[1] else 1
-    print(f"Guanyador: P{winner} ({wins[0]}-{wins[1]})")
-    shutil.copy2(model_dir / f"best_p{winner}.pt", model_dir / "final.pt")
+    # El model final per defecte serà el millor P0
+    shutil.copy2(p0_path, model_dir / "final.pt")
 
     # Netejar pesos intermedis
     for p in model_dir.glob("*.pt"):

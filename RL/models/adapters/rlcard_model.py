@@ -56,6 +56,8 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     hidden_layers = spec.get("hidden_layers", _DEFAULT_HIDDEN_LAYERS)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    use_bn = spec.get("use_bn", True)
+
     # Entorn aplanat (233 dimensions)
     env_wrapped = _crear_env_temp(env_config)
 
@@ -69,8 +71,8 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     )
 
     # Xarxes unificades (mode scratch perquè carregarem pesos del checkpoint)
-    q_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="q")
-    sl_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="policy")
+    q_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="q", use_bn=use_bn)
+    sl_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers, "scratch", device=device, output="policy", use_bn=use_bn)
 
     # Carregar pesos
     checkpoint = torch.load(ruta, map_location=device, weights_only=True)
@@ -107,6 +109,8 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     hidden_layers = spec.get("hidden_layers", _DEFAULT_HIDDEN_LAYERS)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    use_bn = spec.get("use_bn", True)
+
     # Entorn aplanat (233 dimensions)
     env_wrapped = _crear_env_temp(env_config)
 
@@ -124,7 +128,8 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         mlp_layers=hidden_layers,
         mode="scratch",
         device=device,
-        output="q"
+        output="q",
+        use_bn=use_bn
     )
 
     # Carregar pesos
