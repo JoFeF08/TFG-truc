@@ -98,12 +98,16 @@ class XarxaUnificada(nn.Module):
         else:
             z = self.cos(cartes, context)
 
-        #model
-        if self.training and obs.shape[0] == 1:
+        # Si el batch és 1 i estem en training, passem a eval temporalment per la BatchNorm
+        if obs.shape[0] == 1:
+            was_training = self.mlp.training
             self.mlp.eval()
-            out = self.mlp(z)
-            self.mlp.train()
+            with torch.no_grad():
+                out = self.mlp(z)
+            if was_training:
+                self.mlp.train()
             return out
+
         return self.mlp(z)
 
     def get_param_groups(self, lr_cos=1e-5, lr_mlp=5e-4):

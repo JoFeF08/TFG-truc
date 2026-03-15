@@ -146,11 +146,13 @@ def inject_xarxa_dqn(agent, xarxa, mode, lr):
         params = filter(lambda p: p.requires_grad, xarxa.parameters())
         agent.q_estimator.optimizer = torch.optim.Adam(params, lr=lr)
 
-def init_dqn(env, device, mode, ruta=None):
+def init_dqn(env, device, mode, ruta=None, layers=None, use_bn=None):
+    layers = layers or MLP_LAYERS
+    use_bn = use_bn if use_bn is not None else USE_BATCH_NORM
     agent = DQNAgent(
         num_actions=env.num_actions,
         state_shape=env.state_shape[0],
-        mlp_layers=MLP_LAYERS,
+        mlp_layers=layers,
         learning_rate=DQN_LR,
         batch_size=DQN_BATCH,
         replay_memory_size=DQN_MEMORY,
@@ -163,7 +165,7 @@ def init_dqn(env, device, mode, ruta=None):
         device=device,
     )
     
-    x = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q", use_bn=USE_BATCH_NORM)
+    x = XarxaUnificada(env.num_actions, layers, mode, ruta, device, "q", use_bn=use_bn)
     inject_xarxa_dqn(agent, x, mode, DQN_LR)
     
     return agent
@@ -193,12 +195,15 @@ def inject_xarxes_nfsp(agent, q_net, sl_net, mode, rl_lr, sl_lr):
         p_sl = filter(lambda p: p.requires_grad, sl_net.parameters())
         agent.policy_network_optimizer = torch.optim.Adam(p_sl, lr=sl_lr, weight_decay=1e-5)
 
-def init_nfsp(env, device, mode, ruta=None):
+def init_nfsp(env, device, mode, ruta=None, layers_q=None, layers_sl=None, use_bn=None):
+    layers_q = layers_q or MLP_LAYERS
+    layers_sl = layers_sl or MLP_LAYERS_NFSP_SL
+    use_bn = use_bn if use_bn is not None else USE_BATCH_NORM
     agent = NFSPAgent(
         num_actions=env.num_actions,
         state_shape=env.state_shape[0],
-        hidden_layers_sizes=MLP_LAYERS,
-        q_mlp_layers=MLP_LAYERS,
+        hidden_layers_sizes=layers_sl,
+        q_mlp_layers=layers_q,
         rl_learning_rate=NFSP_RL_LR,
         sl_learning_rate=NFSP_SL_LR,
         batch_size=NFSP_BATCH,
@@ -215,8 +220,8 @@ def init_nfsp(env, device, mode, ruta=None):
         device=device,
     )
     
-    q = XarxaUnificada(env.num_actions, MLP_LAYERS, mode, ruta, device, "q", use_bn=USE_BATCH_NORM)
-    sl = XarxaUnificada(env.num_actions, MLP_LAYERS_NFSP_SL, mode, ruta, device, "policy", use_bn=USE_BATCH_NORM)
+    q = XarxaUnificada(env.num_actions, layers_q, mode, ruta, device, "q", use_bn=use_bn)
+    sl = XarxaUnificada(env.num_actions, layers_sl, mode, ruta, device, "policy", use_bn=use_bn)
     inject_xarxes_nfsp(agent, q, sl, mode, NFSP_RL_LR, NFSP_SL_LR)
     
     original_feed = agent.feed
@@ -482,9 +487,36 @@ def run_nfsp(mode, episodes, run_dir, model_dir, log_dir, device, eval_model_pat
             # 20% contra un Expert DQN de la carpeta
             past_path = random.choice(expert_models)
             try:
-                carregar_pesos(opp_pool_base, past_path, device, verbose=False)
-                target_p1 = AgentCongelat(opp_pool_base)
-            except:
+                # Inferir mides de les capes de forma robusta
+                layers = []
+                # Busquem els pesos de les capes lineals (excloent la darrera capa de sortida)
+                # Les capes lineals tenen un pes de forma [out_features, in_features]
+                # Ordenem les claus per assegurar l'ordre del MLP
+                for k in sorted(q_sd.keys()):
+                    if ".weight" in k and "mlp." in k:
+                        # Si no és la darrera capa (que té out_features == n_actions)
+                        if q_sd[k].shape[0] != env.num_actions:
+                            # Evitem duplicats de BatchNorm (que també tenen .weight)
+                            # Els pesos de Linear solen ser 2D, els de BN 1D
+                            if len(q_sd[k].shape) == 2:
+                                layers.append(q_sd[k].shape[0])
+                
+                # Si l'arquitectura és diferent de la pool base, creem un agent temporal
+                if layers and layers != MLP_LAYERS:
+                    # Intentem detectar si el model carregat usava BN mirant les claus
+                    uses_bn_in_model = any("running_mean" in k for k in q_sd.keys())
+                    temp_dqn = init_dqn(env, device, mode="frozen", layers=layers, uses_bn=uses_bn_in_model) # Pass uses_bn
+                    # Forcem el mode BN del temp_dqn si cal
+                    for m in temp_dqn.q_estimator.qnet.modules():
+                        if isinstance(m, nn.BatchNorm1d): m.train(False)
+                    
+                    carregar_pesos(temp_dqn, past_path, device, verbose=False)
+                    target_p1 = AgentCongelat(temp_dqn)
+                else:
+                    carregar_pesos(opp_pool_base, past_path, device, verbose=False)
+                    target_p1 = AgentCongelat(opp_pool_base)
+            except Exception as e:
+                # print(f"Error carregant expert {past_path.name}: {e}")
                 target_p1 = p1 #si falla
         elif chance < 0.95:
             target_p1 = p1 # 70% SELF-PLAY ACTIU
