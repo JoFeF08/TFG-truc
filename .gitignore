@@ -90,3 +90,5 @@ temp/
 TFG_Doc/.obsidian/*
 
 best_p0.pt
+joc/entorn/env_backup.py
+joc/entorn/game_backup.py

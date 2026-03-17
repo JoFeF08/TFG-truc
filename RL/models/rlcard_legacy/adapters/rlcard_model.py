@@ -21,7 +21,7 @@ class _RLCardModelAdapter:
 def _crear_env_temp(env_config: dict[str, Any]):
 
     from joc.entorn.env import TrucEnv
-    from RL.models.rlcard_legacy.adapters.feature_extractor import wrap_env_aplanat
+    from RL.models.rlcard_legacy.adapters.obs_adapter import wrap_env_aplanat
 
     env = TrucEnv(
         config={
