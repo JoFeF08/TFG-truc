@@ -139,8 +139,8 @@ class TrucGame:
                     points_won = self.previous_envit_level
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
                     
-                    self.reward_intermedis[winner_team] +=  (points_won / 24.0)
-                    self.reward_intermedis[1-winner_team] -= (points_won / 24.0)
+                    self.reward_intermedis[winner_team] +=  1.5 * (points_won / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 1.5 * (points_won / 24.0)
 
                     self.punts_envit_pendents = (winner_team, points_won, None)
                     self.ultim_guanyador_envit = (winner_team, points_won, None)
@@ -181,8 +181,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_team, pts_truc)
                     
                     # Reward intermedi de truc (fora - RESPOSTA)
-                    self.reward_intermedis[winner_team] += 1.0 * (pts_truc / 24.0)
-                    self.reward_intermedis[1-winner_team] -= 1.0 * (pts_truc / 24.0)
+                    self.reward_intermedis[winner_team] += 1.5 * (pts_truc / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 1.5 * (pts_truc / 24.0)
 
                     if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
