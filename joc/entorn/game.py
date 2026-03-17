@@ -107,6 +107,10 @@ class TrucGame:
     def step(self, action):
         self.ultim_guanyador_envit = None
         self.ultim_guanyador_truc = None
+        
+        # Recompenses per accio
+        self.reward_intermedis = [0.0, 0.0]
+        
         action_str = ACTION_LIST[action] if isinstance(action, int) else action
         player = self.players[self.current_player]
         
@@ -253,7 +257,6 @@ class TrucGame:
             return self._get_return_state()
         
         elif action_str == 'fora_truc':
-            # Resoldre envit si estava acceptat però no calculat
             self._resoldre_envit_si_pendent()
         
             winner = (self.current_player + 1) % 2
@@ -310,7 +313,7 @@ class TrucGame:
                 self.cartes_ronda = []
                 self.round_counter += 1
 
-                # Comprovar fi de mà just després de tancar una ronda
+                # Comprovar aquesta mà tanca ronda
                 winner_ma = self.judger.guanyador_ma(self.ronda_winners, self.ma)
                 if winner_ma != -1:
                     # Resoldre envit
@@ -353,10 +356,6 @@ class TrucGame:
         return self.get_state(self.current_player), self.current_player
 
     def _resoldre_envit_si_pendent(self):
-        """
-        Calcula el guanyador de l'envit només si s'ha acceptat (vull_envit) 
-        però encara no s'ha resolt. Es crida al finalitzar la mà o al tancar el truc.
-        """
         if self.envit_accepted and self.punts_envit_pendents is None:
             all_hands = [p.initial_hand for p in self.players]
             
@@ -412,7 +411,6 @@ class TrucGame:
         
         # Reward intermedi pendents de llegir
         state['reward_intermedis'] = list(self.reward_intermedis)
-        self.reward_intermedis = [0.0, 0.0]
 
         # --- HISTORIAL FILTRAT PER VISIBILITAT ---
         # Cartes visibles: cartes pròpies (totes) + cartes jugades dels rivals (totes)
@@ -547,7 +545,6 @@ class TrucGame:
         self.round_counter = 0
         self.cartes_ronda = []
         self.ronda_winners = []
-        self.reward_intermedis = [0.0, 0.0]
         self.hist_cartes = []
         self.hist_senyes = []
         self.punts_envit_pendents = None
