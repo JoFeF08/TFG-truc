@@ -11,7 +11,10 @@ class TrucModel(Protocol):
 
 def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel | None:
     """Crea una instància d'un model segons l'especificació donada."""
-    tipus = spec.get("tipus", "default")
+    if spec is None:
+        spec = {"tipus": "ppo_mlp", "ruta": "best.pt"}
+        
+    tipus = spec.get("tipus", "ppo_mlp")
 
     if tipus in ("huma", "default"):
         return None
@@ -30,6 +33,14 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
 
     if tipus == "ppo_mlp":
         from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
+        if not spec.get("ruta"):
+            spec["ruta"] = "best.pt"
         return _crear_ppo_mlp(spec, env_config)
+
+    # Si es "default", usem PPO MLP per defecte
+    if tipus == "default":
+        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
+        spec_def = {"tipus": "ppo_mlp", "ruta": "best.pt"}
+        return _crear_ppo_mlp(spec_def, env_config)
 
     return None

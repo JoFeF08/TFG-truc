@@ -118,7 +118,7 @@ def main():
     num_updates = TOTAL_TIMESTEPS // (NUM_ENVS * NUM_STEPS)
     
     timestamp = datetime.now().strftime("%dd_%mm_%H%Mh")
-    save_dir = Path(__file__).parent / f"ppo_mlp_{timestamp}"
+    save_dir = Path(__file__).parent / "registres" / f"ppo_mlp_{timestamp}"
     save_dir.mkdir(parents=True, exist_ok=True)
     log_file = save_dir / "training_log.csv"
     
@@ -166,14 +166,13 @@ def main():
             if len(opponent_pool) > 0:
                 for i in pool_player_ids:
                     if active_players[i] == pool_player_ids[i]:
-                        # Aquest és un jugador de la pool!
                         with torch.no_grad():
                             p_logits, _ = pool_net(obs_tensor[i:i+1])
                             p_logits = p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)
                             p_action = torch.distributions.Categorical(logits=p_logits).sample()
                         
                         action[i] = p_action
-                        is_learning_step[i] = 0.0 # No n'aprenguis d'aquesta transició
+                        is_learning_step[i] = 0.0
             
             actions_np = action.cpu().numpy()
             
