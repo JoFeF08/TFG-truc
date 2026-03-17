@@ -40,6 +40,11 @@ CLIP_COEF = 0.2
 ENT_COEF = 0.01
 VF_COEF = 0.5
 
+# Fine-tune Constants
+FINETUNE_LR_COS = 1e-5
+FINETUNE_LR_MLP = 1e-4
+UNFREEZE_FRACTION = 0.15
+
 def extract_obs(states_list):
     b_obs = []
     b_masks = []
@@ -76,8 +81,17 @@ def evaluar_contra_random(agent, env_config, device, num_partides=100):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["scratch", "frozen", "finetune"], default="frozen")
+    parser.add_argument("--total_timesteps", type=int, default=TOTAL_TIMESTEPS)
+    args = parser.parse_args()
+    
+    total_timesteps = args.total_timesteps
+    unfreeze_step = int(total_timesteps * UNFREEZE_FRACTION)
+    has_unfrozen = False
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"[{device.type.upper()}] Iniciant Entrenament PPO Base (MLP) - Self-Play amb League/Pool")
+    print(f"[{device.type.upper()}] Iniciant Entrenament PPO Base (MLP) - Mode: {args.mode.upper()}")
     
     env_config = {
         'num_jugadors': 2,
@@ -115,7 +129,7 @@ def main():
     current_states = [res[0] for res in results]
     
     global_step = 0
-    num_updates = TOTAL_TIMESTEPS // (NUM_ENVS * NUM_STEPS)
+    num_updates = total_timesteps // (NUM_ENVS * NUM_STEPS)
     
     timestamp = datetime.now().strftime("%dd_%mm_%H%Mh")
     save_dir = Path(__file__).parent / "registres" / f"ppo_mlp_{timestamp}"
@@ -208,6 +222,14 @@ def main():
         b_obs, b_actions, b_logprobs, b_advantages, b_returns, b_masks, b_is_learning = buffer.get(avantatges, retorns)
         b_inds = np.arange(NUM_ENVS * NUM_STEPS)
         
+        # Unfreeze per Fine-tune
+        if args.mode == "finetune" and not has_unfrozen and global_step >= unfreeze_step:
+            net.unfreeze_cos()
+            params = net.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=LR) # Mantenim LR base per l'MLP
+            optimizer = optim.Adam(params, eps=1e-5)
+            has_unfrozen = True
+            print(f"[Fine-tune] COS descongelat al step {global_step}. Optimizer actualitzat.")
+
         net.train()
         for epoch in range(UPDATE_EPOCHS):
             np.random.shuffle(b_inds)

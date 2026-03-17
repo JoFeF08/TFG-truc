@@ -33,6 +33,8 @@ class PPOMlpNet(nn.Module):
             p.requires_grad = False
         self.cos.eval()
 
+        self.cos_congelat = True
+
         self.actor = nn.Sequential(
             nn.Linear(LATENT_DIM, hidden_size),
             nn.ReLU(),
@@ -68,11 +70,30 @@ class PPOMlpNet(nn.Module):
     def get_features(self, obs):
         cartes, context = self._prepare_obs(obs)
         
-        # Modo freeze
-        with torch.no_grad():
-            self.cos.eval()
+        # Modo freeze si toca
+        if self.cos_congelat:
+            with torch.no_grad():
+                self.cos.eval()
+                z = self.cos(cartes, context)
+        else:
             z = self.cos(cartes, context)
         return z
+
+    def unfreeze_cos(self):
+        """Descongela el cos per a fine-tuning"""
+        for p in self.cos.parameters():
+            p.requires_grad = True
+        self.cos_congelat = False
+        self.cos.train()
+        print("[PPOMlpNet] COS descongelat per a fine-tuning.")
+
+    def get_param_groups(self, lr_cos=1e-5, lr_mlp=5e-4):
+        """Retorna els paràmetres dividits per LR"""
+        return [
+            {"params": self.cos.parameters(), "lr": lr_cos},
+            {"params": self.actor.parameters(), "lr": lr_mlp},
+            {"params": self.critic.parameters(), "lr": lr_mlp}
+        ]
 
     def forward(self, obs):
         z = self.get_features(obs)
