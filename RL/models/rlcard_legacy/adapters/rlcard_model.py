@@ -163,9 +163,19 @@ def _crear_ppo_mlp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucMode
     # Entorn aplanat (necessari per a l'extractor de l'adapter)
     env_wrapped = _crear_env_temp(env_config)
 
-    net = PPOMlpNet(n_actions=env_wrapped.num_actions, device=device)
-    net.load_state_dict(torch.load(ruta, map_location=device, weights_only=True))
-    agent = PPOMlpAgent(net, num_actions=env_wrapped.num_actions, device=device)
+   
+    checkpoint = torch.load(ruta, map_location=device, weights_only=True)
+    
+    # Intentem inferir la mida des de l'última capa de l'actor
+    if 'actor.4.weight' in checkpoint:
+        n_accions_model = checkpoint['actor.4.weight'].shape[0]
+    else:
+        # Fallback al valor de l'entorn si no podem inferir-ho
+        n_accions_model = env_wrapped.num_actions
 
-    print(f"Model PPO MLP carregat des de: {ruta}")
+    net = PPOMlpNet(n_actions=n_accions_model, device=device)
+    net.load_state_dict(checkpoint)
+    agent = PPOMlpAgent(net, num_actions=n_accions_model, device=device)
+
+    print(f"Model PPO MLP carregat des de: {ruta} (Mida: {n_accions_model} accions)")
     return _RLCardModelAdapter(agent, env_wrapped._extract_state)

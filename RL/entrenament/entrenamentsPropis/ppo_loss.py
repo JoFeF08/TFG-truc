@@ -35,18 +35,18 @@ def calcular_gae(r, v_critic, done, ultim_v, ultim_done, gamma=0.995, lam=0.95):
     return avantatges, retorns
 
 def calcular_perdua_ppo(agent, obs, accions, log_probs_antics, avantatges, 
-                        retorns, mascares, coef_retall=0.2, coef_ent=0.01, coef_v=0.5):
+                        retorns, mascares, is_learning=None, coef_retall=0.2, coef_ent=0.01, coef_v=0.5):
 
     _, log_probs_nous, entropia, valors_nous = agent.get_action_and_value(obs, accions, mascares)
     
     return calcular_perdua_ppo_nucleu(
         log_probs_nous, log_probs_antics, entropia, 
         valors_nous, avantatges, retorns, 
-        coef_retall, coef_ent, coef_v
+        is_learning, coef_retall, coef_ent, coef_v
     )
 
 def calcular_perdua_ppo_nucleu(log_probs_nous, log_probs_antics, entropia, valors_nous, avantatges, 
-                                retorns, coef_retall=0.2, coef_ent=0.01, coef_v=0.5):
+                                retorns, is_learning=None, coef_retall=0.2, coef_ent=0.01, coef_v=0.5):
     """
     Calcula la funció d'objectiu total de PPO:
     1. Pèrdua de la Política
@@ -65,13 +65,19 @@ def calcular_perdua_ppo_nucleu(log_probs_nous, log_probs_antics, entropia, valor
     # Pèrdua de la Política
     perdua_pg1 = -avantatges_norm * raio
     perdua_pg2 = -avantatges_norm * torch.clamp(raio, 1 - coef_retall, 1 + coef_retall)
-    perdua_pg = torch.max(perdua_pg1, perdua_pg2).mean()
+    
+    if is_learning is not None:
+        perdua_pg = (torch.max(perdua_pg1, perdua_pg2) * is_learning).sum() / (is_learning.sum() + 1e-8)
+        perdua_v = 0.5 * (((valors_nous - retorns) ** 2) * is_learning).sum() / (is_learning.sum() + 1e-8)
+        perdua_ent = (entropia * is_learning).sum() / (is_learning.sum() + 1e-8)
+    else:
+        perdua_pg = torch.max(perdua_pg1, perdua_pg2).mean()
     
     # Pèrdua de Valor
-    perdua_v = 0.5 * ((valors_nous - retorns) ** 2).mean()
+        perdua_v = 0.5 * ((valors_nous - retorns) ** 2).mean()
     
     # Pèrdua d'Entropia
-    perdua_ent = entropia.mean()
+        perdua_ent = entropia.mean()
     
     # Pèrdua Total
     perdua_total = perdua_pg - coef_ent * perdua_ent + coef_v * perdua_v

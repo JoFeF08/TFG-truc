@@ -72,6 +72,7 @@ RL/entrenament/entrenamentEstatTruc/registres/*
 !RL/entrenament/entrenamentEstatTruc/registres/13_03_26_a_les_1909/
 RL/entrenament/entrenamentsUnificats/registres/*
 RL/entrenament/entrenamentRLCard/registres/*
+RL/entrenament/entrenamentsPropis/*/registres/*
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
@@ -92,3 +93,4 @@ TFG_Doc/.obsidian/*
 best_p0.pt
 joc/entorn/env_backup.py
 joc/entorn/game_backup.py
+best.pt

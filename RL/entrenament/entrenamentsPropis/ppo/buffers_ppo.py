@@ -17,12 +17,12 @@ class RolloutBuffer:
         self.values = torch.zeros((num_steps, num_envs), dtype=torch.float32).to(device)
         
         self.dones = torch.zeros((num_steps, num_envs), dtype=torch.float32).to(device)
-        
         self.masks = torch.zeros((num_steps, num_envs, action_dim), dtype=torch.bool).to(device)
+        self.is_learning = torch.zeros((num_steps, num_envs), dtype=torch.float32).to(device)
         
         self.step = 0
         
-    def add(self, obs, action, logprob, reward, value, done, mask):
+    def add(self, obs, action, logprob, reward, value, done, mask, is_learning=1.0):
         self.obs[self.step] = obs
         self.actions[self.step] = action
         self.logprobs[self.step] = logprob
@@ -30,6 +30,7 @@ class RolloutBuffer:
         self.values[self.step] = value
         self.dones[self.step] = done
         self.masks[self.step] = mask
+        self.is_learning[self.step] = is_learning
         self.step = (self.step + 1) % self.num_steps
         
     def get(self, advantages, returns):
@@ -42,5 +43,6 @@ class RolloutBuffer:
         b_advantages = advantages.reshape((-1,))
         b_returns = returns.reshape((-1,))
         b_masks = self.masks.reshape((-1, self.masks.shape[-1]))
+        b_is_learning = self.is_learning.reshape((-1,))
         
-        return b_obs, b_actions, b_logprobs, b_advantages, b_returns, b_masks
+        return b_obs, b_actions, b_logprobs, b_advantages, b_returns, b_masks, b_is_learning

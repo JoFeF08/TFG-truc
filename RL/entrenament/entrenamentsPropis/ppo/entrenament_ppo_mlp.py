@@ -77,7 +77,7 @@ def evaluar_contra_random(agent, env_config, device, num_partides=100):
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"[{device.type.upper()}] Iniciant Entrenament PPO Base (MLP) - Self-Play Unificat")
+    print(f"[{device.type.upper()}] Iniciant Entrenament PPO Base (MLP) - Self-Play amb League/Pool")
     
     env_config = {
         'num_jugadors': 2,
@@ -92,7 +92,19 @@ def main():
     net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
     agent = PPOMlpAgent(net, n_accions, device=device)
     
-    # cos congelat
+    # Pool d'Oponents
+    pool_net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+    pool_net.eval()
+    opponent_pool = [] # Llista de rutes .pt
+    
+    # 20% pool
+    NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
+    POOL_FREQUENCY = 500
+
+    pool_player_ids = {} # env_idx -> id_jugador
+    for i in range(NUM_ENVS - NUM_POOL_ENVS, NUM_ENVS):
+        pool_player_ids[i] = i % 2
+    
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
     
     state_shape = SPLIT + OBS_CONTEXT_SIZE 
@@ -116,9 +128,19 @@ def main():
 
     pbar = trange(1, num_updates + 1, desc="Actualitzacions")
     eval_wr, eval_rev = 0.0, 0.0
+    
     for update in pbar:
         batch_rewards = []
         
+        if update > 10 and update % POOL_FREQUENCY == 0:
+            ckpt_path = save_dir / f"checkpoint_update_{update}.pt"
+            torch.save(net.state_dict(), ckpt_path)
+            opponent_pool.append(ckpt_path)
+            
+            random_pool_path = random.choice(opponent_pool)
+            pool_net.load_state_dict(torch.load(random_pool_path, map_location=device, weights_only=True))
+            print(f"\n[Pool] Oponent actualitzat a: {random_pool_path.name}")
+            
         for step in range(NUM_STEPS):
             global_step += NUM_ENVS
             
@@ -126,6 +148,12 @@ def main():
             obs_tensor = obs_tensor.to(device)
             masks_tensor = masks_tensor.to(device)
             
+            active_players = [s['raw_obs']['id_jugador'] for s in current_states]
+            
+            # Decidir qui actua en cada env
+            is_learning_step = torch.ones(NUM_ENVS, device=device)
+            
+            # Totes les accions triades per defecte pel Learner
             net.eval()
             with torch.no_grad():
                 logits, value = net(obs_tensor)
@@ -134,8 +162,20 @@ def main():
                 action = dist.sample()
                 logprob = dist.log_prob(action)
             
+            # Sobreescriure accions de la Pool si toca
+            if len(opponent_pool) > 0:
+                for i in pool_player_ids:
+                    if active_players[i] == pool_player_ids[i]:
+                        # Aquest és un jugador de la pool!
+                        with torch.no_grad():
+                            p_logits, _ = pool_net(obs_tensor[i:i+1])
+                            p_logits = p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)
+                            p_action = torch.distributions.Categorical(logits=p_logits).sample()
+                        
+                        action[i] = p_action
+                        is_learning_step[i] = 0.0 # No n'aprenguis d'aquesta transició
+            
             actions_np = action.cpu().numpy()
-            active_players = [s['raw_obs']['id_jugador'] for s in current_states]
             
             # Executar step
             next_states_players, rewards_list, dones_list = vec_env.step(actions_np)
@@ -147,7 +187,7 @@ def main():
             step_rewards_tensor = torch.tensor(step_rewards, dtype=torch.float32).to(device)
             dones_tensor = torch.tensor(dones_list, dtype=torch.float32).to(device)
             
-            buffer.add(obs_tensor, action, logprob, step_rewards_tensor, value.squeeze(-1), dones_tensor, masks_tensor)
+            buffer.add(obs_tensor, action, logprob, step_rewards_tensor, value.squeeze(-1), dones_tensor, masks_tensor, is_learning_step)
             
             current_states = [sp[0] for sp in next_states_players]
             batch_rewards.extend(step_rewards)
@@ -166,7 +206,7 @@ def main():
             GAMMA, GAE_LAMBDA
         )
         
-        b_obs, b_actions, b_logprobs, b_advantages, b_returns, b_masks = buffer.get(avantatges, retorns)
+        b_obs, b_actions, b_logprobs, b_advantages, b_returns, b_masks, b_is_learning = buffer.get(avantatges, retorns)
         b_inds = np.arange(NUM_ENVS * NUM_STEPS)
         
         net.train()
@@ -176,12 +216,11 @@ def main():
                 end = start + MINIBATCH_SIZE
                 mb_inds = b_inds[start:end]
                 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds], b_masks[mb_inds])
-                
                 loss, pg_loss, v_loss, ent_loss = calcular_perdua_ppo(
                     agent, b_obs[mb_inds], b_actions[mb_inds], b_logprobs[mb_inds], 
                     b_advantages[mb_inds], b_returns[mb_inds], b_masks[mb_inds],
-                    CLIP_COEF, ENT_COEF, VF_COEF
+                    is_learning=b_is_learning[mb_inds],
+                    coef_retall=CLIP_COEF, coef_ent=ENT_COEF, coef_v=VF_COEF
                 )
                 
                 optimizer.zero_grad()
