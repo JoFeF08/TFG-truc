@@ -1,0 +1,79 @@
+import torch
+import torch.nn as nn
+from RL.models.core.feature_extractor import CosMultiInput
+import os
+from pathlib import Path
+
+LATENT_DIM = 128
+OBS_CARTES_SHAPE = (6, 4, 9)
+SPLIT = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2] # 216
+OBS_CONTEXT_SIZE = 23
+
+COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent.parent / "entrenament" / "entrenamentEstatTruc" / "registres" / "13_03_26_a_les_1909" / "models" / "best_pesos_cos_truc.pth")
+
+class PPOMlpNet(nn.Module):
+    """
+    Xarxa Actor-Critic base
+    """
+    def __init__(self, n_actions, hidden_size=256, ruta_weights=None, device='cpu'):
+        super().__init__()
+        self.device = device
+        self.cos = CosMultiInput()
+        
+        # Carreguem pesos
+        w = ruta_weights or COS_WEIGHTS_PATH
+        if w and os.path.exists(w):
+            self.cos.load_state_dict(torch.load(w, map_location=self.device, weights_only=True))
+            print(f"[PPOMlpNet] Pesos carregats al COS: {os.path.basename(os.path.dirname(os.path.dirname(w)))}")
+        else:
+            print("[PPOMlpNet] Avís: Cap pes pre-entrenat trobat, usant random.")
+            
+        # Congelem cos
+        for p in self.cos.parameters():
+            p.requires_grad = False
+        self.cos.eval()
+
+        self.actor = nn.Sequential(
+            nn.Linear(LATENT_DIM, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n_actions)
+        )
+        
+        self.critic = nn.Sequential(
+            nn.Linear(LATENT_DIM, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
+        
+        self.to(device)
+
+    def _prepare_obs(self, obs):
+        if not isinstance(obs, torch.Tensor):
+            obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        elif obs.device != self.device:
+            obs = obs.to(self.device)
+
+        if len(obs.shape) == 1:
+            obs = obs.unsqueeze(0)
+
+        cartes_f = obs[:, :SPLIT]
+        context = obs[:, SPLIT:]
+        cartes = cartes_f.view(-1, *OBS_CARTES_SHAPE)
+        return cartes, context
+
+    def get_features(self, obs):
+        cartes, context = self._prepare_obs(obs)
+        
+        # Modo freeze
+        with torch.no_grad():
+            self.cos.eval()
+            z = self.cos(cartes, context)
+        return z
+
+    def forward(self, obs):
+        z = self.get_features(obs)
+        return self.actor(z), self.critic(z)
