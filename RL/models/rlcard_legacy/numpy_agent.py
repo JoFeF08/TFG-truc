@@ -1,11 +1,11 @@
 import os
 import numpy as np
 from typing import Any, Callable
-from RL.models.loader import TrucModel
+from RL.models.rlcard_legacy.loader import TrucModel
 
 def _crear_env_temp(env_config: dict[str, Any]):
     from joc.entorn.env import TrucEnv
-    from RL.models.adapters.feature_extractor import wrap_env_aplanat
+    from RL.models.rlcard_legacy.adapters.feature_extractor import wrap_env_aplanat
     env = TrucEnv(
         config={
             "num_jugadors": env_config.get("num_jugadors", 2),

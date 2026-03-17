@@ -3,9 +3,6 @@ import torch.nn as nn
 
 
 def _calcular_mida_flatten(in_channels=6, H=4, W=9) -> int:
-    """
-    Calcula la mida del tensor aplanat després de les dues capes Conv2d.
-    """
     out_H = H - 2
     out_W = W - 4
     return 32 * out_H * out_W  # 320
@@ -70,8 +67,6 @@ class ModelPreEntrenament(nn.Module):
       - Els punts d'Envit (normalitzats, MSE).
       - La força de la mà pel Truc (suma de força de cartes normalitzada, MSE).
       - Les accions legals permeses en l'estat actual (19 logits, BCE).
-
-    Sortida de forward: (envido_pred, truc_pred, accions_legals_pred)
     """
 
     def __init__(self):
@@ -79,13 +74,10 @@ class ModelPreEntrenament(nn.Module):
         self.cos = CosMultiInput()
         self.cap_envido = nn.Linear(128, 1)
         self.cap_truc = nn.Linear(128, 1)
-        self.cap_accions_legals = nn.Linear(128, 19)  # 19 accions legals a ACTION_LIST
+        self.cap_accions_legals = nn.Linear(128, 19)
 
     def forward(self, cartes: torch.Tensor, context: torch.Tensor):
         """
-        Args:
-            cartes  : (batch, 6, 4, 9)
-            context : (batch, 23)
         Returns:
             val_envido   : (batch, 1)
             val_truc     : (batch, 1)

@@ -1,16 +1,12 @@
 import os
 from typing import Any, Callable
 
-from RL.models.loader import TrucModel
+from RL.models.rlcard_legacy.loader import TrucModel
 
 _DEFAULT_HIDDEN_LAYERS = [256, 256]
 
 
 class _RLCardModelAdapter:
-    """
-    Adaptador que encapsula un agent procedent de la llibreria RLCard
-    perquè sigui compatible amb la interfície universal `TrucModel`.
-    """
 
     def __init__(self, agent: Any, state_extractor: Callable[[dict[str, Any]], dict[str, Any]]):
         self._agent = agent
@@ -23,12 +19,9 @@ class _RLCardModelAdapter:
 
 
 def _crear_env_temp(env_config: dict[str, Any]):
-    """
-    Crea i retorna un entorn `TrucEnv` temporal aplanat (233 dims)
-    per extreure les dimensions de l'arquitectura.
-    """
+
     from joc.entorn.env import TrucEnv
-    from RL.models.adapters.feature_extractor import wrap_env_aplanat
+    from RL.models.rlcard_legacy.adapters.feature_extractor import wrap_env_aplanat
 
     env = TrucEnv(
         config={
@@ -47,7 +40,7 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     import torch
     import copy
     from rlcard.agents.nfsp_agent import NFSPAgent
-    from RL.models.xarxa_unificada import XarxaUnificada
+    from RL.models.core.base_networks import XarxaUnificada
 
     ruta = spec["ruta"]
     if not os.path.exists(ruta):
@@ -61,7 +54,7 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
 
     use_bn = spec.get("use_bn", True)
 
-    # Entorn aplanat (233 dimensions)
+    # Entorn aplanat
     env_wrapped = _crear_env_temp(env_config)
 
     # Agent NFSP base
@@ -73,14 +66,12 @@ def _crear_nfsp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         device=device,
     )
 
-    # Xarxes unificades (mode scratch perquè carregarem pesos del checkpoint)
+    # Xarxes unificades
     q_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers_q, "scratch", device=device, output="q", use_bn=use_bn)
     sl_net = XarxaUnificada(env_wrapped.num_actions, hidden_layers_sl, "scratch", device=device, output="policy", use_bn=use_bn)
 
-    # Carregar pesos
     checkpoint = torch.load(ruta, map_location=device, weights_only=True)
     
-    # Suport per a diferents estils de guardat (unificats o antics)
     q_sd = checkpoint.get("q", checkpoint.get("q_net", checkpoint))
     sl_sd = checkpoint.get("sl", checkpoint.get("sl_net", checkpoint))
 
@@ -103,7 +94,7 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     import torch
     import copy
     from rlcard.agents.dqn_agent import DQNAgent
-    from RL.models.xarxa_unificada import XarxaUnificada
+    from RL.models.core.base_networks import XarxaUnificada
 
     ruta = spec["ruta"]
     if not os.path.exists(ruta):
@@ -114,7 +105,7 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
     
     use_bn = spec.get("use_bn", True)
 
-    # Entorn aplanat (233 dimensions)
+    # Entorn aplanat
     env_wrapped = _crear_env_temp(env_config)
 
     # Agent DQN base
@@ -125,7 +116,7 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         device=device,
     )
 
-    # Xarxa unificada (mode scratch)
+    # Xarxa unificada
     xarxa = XarxaUnificada(
         n_actions=env_wrapped.num_actions,
         mlp_layers=hidden_layers,
@@ -135,7 +126,6 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
         use_bn=use_bn
     )
 
-    # Carregar pesos
     checkpoint = torch.load(ruta, map_location=device, weights_only=True)
     q_sd = checkpoint.get("q_net", checkpoint) if isinstance(checkpoint, dict) else checkpoint
     xarxa.load_state_dict(q_sd)

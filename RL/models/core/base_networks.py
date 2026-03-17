@@ -4,7 +4,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from RL.models.xarxa_truc import CosMultiInput
+from RL.models.core.feature_extractor import CosMultiInput
 
 # Dimensions fixes
 LATENT_DIM = 128
@@ -86,7 +86,6 @@ class XarxaUnificada(nn.Module):
             obs = obs.to(self.device)
 
         # Convertir l'array a format cartes + context
-        # obs sol ser [Batch, Flat_Dim]
         cartes_f = obs[:, :self.split]
         context = obs[:, self.split:]
         
