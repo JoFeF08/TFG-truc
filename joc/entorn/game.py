@@ -159,6 +159,10 @@ class TrucGame:
             elif self.response_state == ResponseState.TRUC_PENDING:
                 if action_str == 'vull_truc':
                     self.response_state = ResponseState.NO_PENDING
+                    
+                    # Bonus de valentia per acceptar Truc
+                    self.reward_intermedis[self.current_player] += 0.10
+                    self.reward_intermedis[(self.current_player + 1) % 2] -= 0.10
 
                     # Retornar el torn
                     self.current_player = self.turn_player
@@ -181,8 +185,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_team, pts_truc)
                     
                     # Reward intermedi de truc (fora - RESPOSTA)
-                    self.reward_intermedis[winner_team] += 1.5 * (pts_truc / 24.0)
-                    self.reward_intermedis[1-winner_team] -= 1.5 * (pts_truc / 24.0)
+                    self.reward_intermedis[winner_team] += 2.0 * (pts_truc / 24.0)
+                    self.reward_intermedis[1-winner_team] -= 2.0 * (pts_truc / 24.0)
 
                     if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
@@ -329,8 +333,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_ma, self.truc_level)
                     
                     # Reward intermedi de truc (guanyador per mà)
-                    self.reward_intermedis[winner_ma] += 2.0 * (self.truc_level / 24.0)
-                    self.reward_intermedis[1-winner_ma] -= 2.0 * (self.truc_level / 24.0)
+                    self.reward_intermedis[winner_ma] += 1.0 * (self.truc_level / 24.0)
+                    self.reward_intermedis[1-winner_ma] -= 1.0 * (self.truc_level / 24.0)
 
                     self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
