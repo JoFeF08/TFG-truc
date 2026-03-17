@@ -38,8 +38,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-MODEL_PATH = resource_path("best_p0.pt")
-TIPUS_AGENT = "nfsp"
+MODEL_PATH = resource_path("best.pt")
+TIPUS_AGENT = "ppo_mlp"
 
 config = {
     "num_jugadors": 2,
@@ -51,9 +51,6 @@ config = {
         1: {
             "tipus": TIPUS_AGENT, 
             "ruta": MODEL_PATH, 
-            "amb_cos": True,
-            "hidden_layers_q": [512, 512],
-            "hidden_layers_sl": [1024, 512]
         },
     },
 }

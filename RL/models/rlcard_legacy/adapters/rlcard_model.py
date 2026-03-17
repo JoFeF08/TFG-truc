@@ -136,3 +136,36 @@ def _crear_dqn(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
 
     print(f"Model DQN Unificat carregat des de: {ruta}")
     return _RLCardModelAdapter(agent, env_wrapped._extract_state)
+
+
+def _crear_ppo_mlp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel:
+    """
+    Crea un model PPO MLP unificat.
+    """
+    import torch
+    from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet
+    from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
+
+    ruta = spec["ruta"]
+    if not os.path.exists(ruta):
+        # Intentem buscar-lo a l'arrel si la ruta és relativa i no existeix
+        if not os.path.isabs(ruta):
+            root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+            ruta_absoluta = os.path.join(root_path, ruta)
+            if os.path.exists(ruta_absoluta):
+                ruta = ruta_absoluta
+        
+        if not os.path.exists(ruta):
+            raise FileNotFoundError(f"No s'ha trobat el model PPO a: {ruta}")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Entorn aplanat (necessari per a l'extractor de l'adapter)
+    env_wrapped = _crear_env_temp(env_config)
+
+    net = PPOMlpNet(n_actions=env_wrapped.num_actions, device=device)
+    net.load_state_dict(torch.load(ruta, map_location=device, weights_only=True))
+    agent = PPOMlpAgent(net, num_actions=env_wrapped.num_actions, device=device)
+
+    print(f"Model PPO MLP carregat des de: {ruta}")
+    return _RLCardModelAdapter(agent, env_wrapped._extract_state)

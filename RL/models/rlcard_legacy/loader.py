@@ -28,4 +28,8 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
         from RL.models.rlcard_legacy.numpy_agent import _crear_numpy_dqn
         return _crear_numpy_dqn(spec, env_config)
 
+    if tipus == "ppo_mlp":
+        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
+        return _crear_ppo_mlp(spec, env_config)
+
     return None

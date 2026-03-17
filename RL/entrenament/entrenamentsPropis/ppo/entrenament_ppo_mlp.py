@@ -6,8 +6,10 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import csv
+import random
+from datetime import datetime
 
 try:
     if '__file__' in globals():
@@ -20,14 +22,17 @@ from RL.entrenament.entrenamentsPropis.parallel_env import SubprocVecEnv
 from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
 from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
+from rlcard.agents import RandomAgent
+from joc.entorn.env import TrucEnv
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo
+from joc.entorn.cartes_accions import ACTION_LIST
 
 # Hyperparams Constants
-NUM_ENVS = 16
-NUM_STEPS = 128
-MINIBATCH_SIZE = 256
-UPDATE_EPOCHS = 4
-TOTAL_TIMESTEPS = 3_000_000
+NUM_ENVS = 48
+NUM_STEPS = 512
+MINIBATCH_SIZE = 1024
+UPDATE_EPOCHS = 10
+TOTAL_TIMESTEPS = 12_000_000
 LR = 3e-4
 GAMMA = 0.995
 GAE_LAMBDA = 0.95
@@ -44,12 +49,30 @@ def extract_obs(states_list):
         flat = np.concatenate([raw_obs['obs_cartes'].flatten(), raw_obs['obs_context']], axis=0)
         b_obs.append(flat)
         
-        mask = np.zeros(21, dtype=bool)
+        mask = np.zeros(len(ACTION_LIST), dtype=bool)
         legal = list(state['legal_actions'].keys()) if hasattr(state['legal_actions'], 'keys') else state['legal_actions']
         mask[legal] = True
         b_masks.append(mask)
 
     return torch.tensor(np.array(b_obs), dtype=torch.float32), torch.tensor(np.array(b_masks), dtype=torch.bool)
+
+
+def evaluar_contra_random(agent, env_config, device, num_partides=100):
+    """Evalua l'agent PPO contra un agent que tria accions aleatòries."""
+    eval_env = TrucEnv(env_config)
+    eval_env.set_agents([agent, RandomAgent(num_actions=len(ACTION_LIST))])
+    
+    recompenses = []
+    victories = 0
+    
+    for _ in range(num_partides):
+        trajectoria, payoffs = eval_env.run(is_training=False)
+        recompensa = payoffs[0]
+        recompenses.append(recompensa)
+        if recompensa > 0:
+            victories += 1
+            
+    return np.mean(recompenses), (victories / num_partides) * 100
 
 
 def main():
@@ -65,14 +88,15 @@ def main():
     
     vec_env = SubprocVecEnv(NUM_ENVS, env_config)
     
-    net = PPOMlpNet(n_actions=21, hidden_size=256, device=device)
-    agent = PPOMlpAgent(net, 21, device=device)
+    n_accions = len(ACTION_LIST)
+    net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+    agent = PPOMlpAgent(net, n_accions, device=device)
     
     # cos congelat
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
     
     state_shape = SPLIT + OBS_CONTEXT_SIZE 
-    buffer = RolloutBuffer(NUM_STEPS, NUM_ENVS, state_shape, action_dim=21, device=device)
+    buffer = RolloutBuffer(NUM_STEPS, NUM_ENVS, state_shape, action_dim=n_accions, device=device)
     
     # Inicialitzar entorns
     results = vec_env.reset_all()
@@ -81,15 +105,18 @@ def main():
     global_step = 0
     num_updates = TOTAL_TIMESTEPS // (NUM_ENVS * NUM_STEPS)
     
-    save_dir = Path(__file__).parent / "registres"
+    timestamp = datetime.now().strftime("%dd_%mm_%H%Mh")
+    save_dir = Path(__file__).parent / f"ppo_mlp_{timestamp}"
     save_dir.mkdir(parents=True, exist_ok=True)
     log_file = save_dir / "training_log.csv"
     
     with open(log_file, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean"])
+        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward"])
 
-    for update in range(1, num_updates + 1):
+    pbar = trange(1, num_updates + 1, desc="Actualitzacions")
+    eval_wr, eval_rev = 0.0, 0.0
+    for update in pbar:
         batch_rewards = []
         
         for step in range(NUM_STEPS):
@@ -164,11 +191,18 @@ def main():
                 
         # Logs i Guardat
         mean_reward = np.mean(batch_rewards)
+        if update % 50 == 0:
+            eval_rev, eval_wr = evaluar_contra_random(agent, env_config, device)
+
         if update % 10 == 0:
-            print(f"Update: {update}/{num_updates} | Step: {global_step} | Reward: {mean_reward:.4f} | VLoss: {v_loss.item():.4f}")
+            pbar.set_postfix({
+                "Rew": f"{mean_reward:.4f}", 
+                "V": f"{v_loss.item():.3f}", 
+                "WR%": f"{eval_wr:.1f}"
+            })
             with open(log_file, "a", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward])
+                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev])
                 
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_update_{update}.pt")
