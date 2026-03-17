@@ -29,7 +29,7 @@ for name in logging.root.manager.loggerDict:
 from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
 from rlcard.utils import set_seed
 from joc.entorn import TrucEnv, reorganize_amb_rewards
-from RL.models.xarxa_unificada import XarxaUnificada
+from RL.models.core.base_networks import XarxaUnificada
 
 # Silenciar loggers de RLCard
 logging.basicConfig(level=logging.ERROR, force=True)

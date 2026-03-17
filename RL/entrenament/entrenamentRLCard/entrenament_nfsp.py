@@ -78,7 +78,7 @@ def crear_agent_nfsp(env, device):
     )
 
 
-from RL.models.adapters.feature_extractor import wrap_env_amb_cos, carregar_model_cos
+from RL.models.rlcard_legacy.adapters.obs_adapter import wrap_env_amb_cos, carregar_model_cos
 
 
 def main():

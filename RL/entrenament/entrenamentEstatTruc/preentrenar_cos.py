@@ -22,7 +22,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from joc.entorn.cartes_accions import PALS, NUMS, ACTION_LIST
 from joc.entorn.env import TrucEnv
 from joc.entorn.rols.judger import TrucJudger
-from RL.models.xarxa_truc import ModelPreEntrenament
+from RL.models.core.feature_extractor import ModelPreEntrenament
 
 # Constants
 MIDA_DATASET    = 200_000
