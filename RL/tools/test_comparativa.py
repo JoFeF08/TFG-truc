@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from joc.entorn.game import TrucGame
-from RL.models.loader import crear_model
+from RL.models.rlcard_legacy.loader import crear_model
 
 def run_test():
     # Rutes
