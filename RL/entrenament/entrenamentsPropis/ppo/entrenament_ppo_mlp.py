@@ -110,10 +110,20 @@ def main():
     pool_net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
     pool_net.eval()
     opponent_pool = [] # Llista de rutes .pt
-    
+
+    # Carregar best.pt dels entrenamants anteriors
+    registres_dir = Path(__file__).parent / "registres"
+    if registres_dir.exists():
+        for run_dir in registres_dir.iterdir():
+            if run_dir.is_dir() and run_dir.name.startswith("ppo_mlp_"):
+                best_path = run_dir / "best.pt"
+                if best_path.exists():
+                    opponent_pool.append(best_path)
+                    print(f"[Pool Init] Carregat: {best_path.name}")
+
     # 20% pool
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
-    POOL_FREQUENCY = 500
+    POOL_FREQUENCY = 100
 
     pool_player_ids = {} # env_idx -> id_jugador
     for i in range(NUM_ENVS - NUM_POOL_ENVS, NUM_ENVS):
@@ -143,6 +153,7 @@ def main():
     pbar = trange(1, num_updates + 1, desc="Actualitzacions")
     eval_wr, eval_rev = 0.0, 0.0
     
+    best_eval_wr = -1.0
     for update in pbar:
         batch_rewards = []
         
@@ -253,6 +264,11 @@ def main():
         mean_reward = np.mean(batch_rewards)
         if update % 50 == 0:
             eval_rev, eval_wr = evaluar_contra_random(agent, env_config, device)
+            
+            if eval_wr >= best_eval_wr:
+                best_eval_wr = eval_wr
+                torch.save(net.state_dict(), save_dir / "best.pt")
+                tqdm.write(f" -> Nou millor Win Rate: {best_eval_wr:.1f}%! Model guardat.")
 
         if update % 10 == 0:
             pbar.set_postfix({
@@ -268,7 +284,6 @@ def main():
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_update_{update}.pt")
             
     # Finalització
-    torch.save(net.state_dict(), save_dir / "best.pt")
     vec_env.close()
 
 if __name__ == "__main__":
