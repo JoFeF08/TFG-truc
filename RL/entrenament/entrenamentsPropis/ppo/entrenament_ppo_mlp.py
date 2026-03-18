@@ -45,6 +45,8 @@ FINETUNE_LR_COS = 1e-5
 FINETUNE_LR_MLP = 1e-4
 UNFREEZE_FRACTION = 0.15
 
+GOLDEN_PATH = Path(__file__).parent / "golden_ppo.pt"
+
 def extract_obs(states_list):
     b_obs = []
     b_masks = []
@@ -75,6 +77,26 @@ def evaluar_contra_random(agent, env_config, device, num_partides=20):
         recompensa = payoffs[0]
         recompenses.append(recompensa)
         if recompensa > 0:
+            victories += 1
+
+    return np.mean(recompenses), (victories / num_partides) * 100
+
+
+def evaluar_contra_golden(agent, golden_agent, env_config, num_partides=100):
+    """Evalua l'agent contra el golden opponent fix (PPO simple)."""
+    if golden_agent is None:
+        return 0.0, 0.0
+
+    eval_env = TrucEnv(env_config)
+    eval_env.set_agents([agent, golden_agent])
+
+    recompenses = []
+    victories = 0
+
+    for _ in range(num_partides):
+        _, payoffs = eval_env.run(is_training=False)
+        recompenses.append(payoffs[0])
+        if payoffs[0] > 0:
             victories += 1
 
     return np.mean(recompenses), (victories / num_partides) * 100
@@ -121,6 +143,16 @@ def main():
                     opponent_pool.append(best_path)
     print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
 
+    # Carregar golden opponent (PPO simple fix)
+    golden_agent = None
+    if GOLDEN_PATH.exists():
+        golden_net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+        golden_net.load_state_dict(torch.load(GOLDEN_PATH, map_location=device, weights_only=True))
+        golden_agent = PPOMlpAgent(golden_net, n_accions, device=device)
+        print(f"[Golden] Carregat: {GOLDEN_PATH.name}")
+    else:
+        print(f"[Golden] No trobat: {GOLDEN_PATH.name}. Avaluació només contra random.")
+
     # 20% pool
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
     POOL_FREQUENCY = 500  # Reduït de 100 a 500 per menys overhead de carregament
@@ -148,10 +180,10 @@ def main():
     
     with open(log_file, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward"])
+        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward", "eval_wr_golden"])
 
     pbar = trange(1, num_updates + 1, desc="Actualitzacions")
-    eval_wr, eval_rev = 0.0, 0.0
+    eval_wr, eval_rev, eval_wr_golden = 0.0, 0.0, 0.0
     
     best_eval_wr = -1.0
     for update in pbar:
@@ -264,21 +296,24 @@ def main():
         mean_reward = np.mean(batch_rewards)
         if update % 50 == 0:
             eval_rev, eval_wr = evaluar_contra_random(agent, env_config, device)
-            
-            if eval_wr >= best_eval_wr:
-                best_eval_wr = eval_wr
+            _, eval_wr_golden = evaluar_contra_golden(agent, golden_agent, env_config)
+
+            metric = eval_wr_golden if golden_agent is not None else eval_wr
+            if metric >= best_eval_wr:
+                best_eval_wr = metric
                 torch.save(net.state_dict(), save_dir / "best.pt")
-                tqdm.write(f" -> Nou millor Win Rate: {best_eval_wr:.1f}%! Model guardat.")
+                tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% golden={eval_wr_golden:.1f}%! Model guardat.")
 
         if update % 10 == 0:
             pbar.set_postfix({
-                "Rew": f"{mean_reward:.4f}", 
-                "V": f"{v_loss.item():.3f}", 
-                "WR%": f"{eval_wr:.1f}"
+                "Rew": f"{mean_reward:.4f}",
+                "V": f"{v_loss.item():.3f}",
+                "WR%": f"{eval_wr:.1f}",
+                "GWR%": f"{eval_wr_golden:.1f}"
             })
             with open(log_file, "a", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev])
+                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_golden])
                 
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_update_{update}.pt")
