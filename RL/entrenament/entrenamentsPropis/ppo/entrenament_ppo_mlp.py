@@ -28,10 +28,10 @@ from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_pe
 from joc.entorn.cartes_accions import ACTION_LIST
 
 # Hyperparams Constants
-NUM_ENVS = 96  # Augmentat de 48 a 96 per aprofitar GPU
+NUM_ENVS = 48
 NUM_STEPS = 512
 MINIBATCH_SIZE = 1024
-UPDATE_EPOCHS = 10
+UPDATE_EPOCHS = 7
 TOTAL_TIMESTEPS = 24_000_000
 LR = 3e-4
 GAMMA = 0.995
