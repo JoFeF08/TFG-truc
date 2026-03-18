@@ -28,7 +28,7 @@ from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_pe
 from joc.entorn.cartes_accions import ACTION_LIST
 
 # Hyperparams Constants
-NUM_ENVS = 48
+NUM_ENVS = 96  # Augmentat de 48 a 96 per aprofitar GPU
 NUM_STEPS = 512
 MINIBATCH_SIZE = 1024
 UPDATE_EPOCHS = 10
@@ -62,21 +62,21 @@ def extract_obs(states_list):
     return torch.tensor(np.array(b_obs), dtype=torch.float32), torch.tensor(np.array(b_masks), dtype=torch.bool)
 
 
-def evaluar_contra_random(agent, env_config, device, num_partides=100):
+def evaluar_contra_random(agent, env_config, device, num_partides=20):
     """Evalua l'agent PPO contra un agent que tria accions aleatòries."""
     eval_env = TrucEnv(env_config)
     eval_env.set_agents([agent, RandomAgent(num_actions=len(ACTION_LIST))])
-    
+
     recompenses = []
     victories = 0
-    
+
     for _ in range(num_partides):
         trajectoria, payoffs = eval_env.run(is_training=False)
         recompensa = payoffs[0]
         recompenses.append(recompensa)
         if recompensa > 0:
             victories += 1
-            
+
     return np.mean(recompenses), (victories / num_partides) * 100
 
 
@@ -123,7 +123,7 @@ def main():
 
     # 20% pool
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
-    POOL_FREQUENCY = 100
+    POOL_FREQUENCY = 500  # Reduït de 100 a 500 per menys overhead de carregament
 
     pool_player_ids = {} # env_idx -> id_jugador
     for i in range(NUM_ENVS - NUM_POOL_ENVS, NUM_ENVS):
@@ -164,6 +164,7 @@ def main():
             
             random_pool_path = random.choice(opponent_pool)
             pool_net.load_state_dict(torch.load(random_pool_path, map_location=device, weights_only=True))
+            pool_net = pool_net.to(device)  # Assegurar que està en GPU
             print(f"\n[Pool] Oponent actualitzat a: {random_pool_path.name}")
             
         for step in range(NUM_STEPS):
