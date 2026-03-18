@@ -9,7 +9,6 @@ import torch.nn as nn
 from tqdm import tqdm, trange
 import csv
 import random
-import time
 from datetime import datetime
 
 try:
@@ -30,7 +29,7 @@ from joc.entorn.cartes_accions import ACTION_LIST
 
 # Hyperparams Constants
 NUM_ENVS = 48
-NUM_STEPS = 512
+NUM_STEPS = 256
 MINIBATCH_SIZE = 1024
 UPDATE_EPOCHS = 7
 TOTAL_TIMESTEPS = 24_000_000
@@ -157,8 +156,6 @@ def main():
     best_eval_wr = -1.0
     for update in pbar:
         batch_rewards = []
-        t0 = time.time()
-
         if update > 10 and update % POOL_FREQUENCY == 0:
             ckpt_path = save_dir / f"checkpoint_update_{update}.pt"
             torch.save(net.state_dict(), ckpt_path)
@@ -219,7 +216,6 @@ def main():
             current_states = [sp[0] for sp in next_states_players]
             batch_rewards.extend(step_rewards)
             
-        t1 = time.time()
         # PPO Update
         obs_tensor, _ = extract_obs(current_states)
         obs_tensor = obs_tensor.to(device)
@@ -264,10 +260,6 @@ def main():
                 nn.utils.clip_grad_norm_(net.parameters(), 0.5)
                 optimizer.step()
                 
-        t2 = time.time()
-        if update <= 3:
-            tqdm.write(f"[TIMING] Rollout: {t1-t0:.2f}s | PPO update: {t2-t1:.2f}s | Total: {t2-t0:.2f}s")
-
         # Logs i Guardat
         mean_reward = np.mean(batch_rewards)
         if update % 50 == 0:
