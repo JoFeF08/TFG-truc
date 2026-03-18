@@ -119,7 +119,8 @@ def main():
                 best_path = run_dir / "best.pt"
                 if best_path.exists():
                     opponent_pool.append(best_path)
-                    print(f"[Pool Init] Carregat: {best_path.name}")
+                    print(f"[Pool Init] Carregat: {run_dir.name} -> {best_path}")
+    print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
 
     # 20% pool
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
