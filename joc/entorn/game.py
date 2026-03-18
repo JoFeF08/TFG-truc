@@ -139,8 +139,8 @@ class TrucGame:
                     points_won = self.previous_envit_level
                     winner_team = self.judger.get_equip((self.current_player + 1) % 2)
                     
-                    self.reward_intermedis[winner_team] +=  1.5 * (points_won / 24.0)
-                    self.reward_intermedis[1-winner_team] -= 1.5 * (points_won / 24.0)
+                    self.reward_intermedis[winner_team] += 1.5 * (points_won / 24.0)   # guanyador: 1.5x (incentiu ofensiu)
+                    self.reward_intermedis[1-winner_team] -= 1.0 * (points_won / 24.0)  # perdedor: 1.0x (retirada estratègica)
 
                     self.punts_envit_pendents = (winner_team, points_won, None)
                     self.ultim_guanyador_envit = (winner_team, points_won, None)
@@ -160,9 +160,7 @@ class TrucGame:
                 if action_str == 'vull_truc':
                     self.response_state = ResponseState.NO_PENDING
                     
-                    # Bonus de valentia per acceptar Truc
-                    self.reward_intermedis[self.current_player] += 0.10
-                    self.reward_intermedis[(self.current_player + 1) % 2] -= 0.10
+                    # Sense bonus per acceptar Truc — el reward ve del resultat
 
                     # Retornar el torn
                     self.current_player = self.turn_player
@@ -185,8 +183,8 @@ class TrucGame:
                     self.ultim_guanyador_truc = (winner_team, pts_truc)
                     
                     # Reward intermedi de truc (fora - RESPOSTA)
-                    self.reward_intermedis[winner_team] += 2.0 * (pts_truc / 24.0)
-                    self.reward_intermedis[1-winner_team] -= 2.0 * (pts_truc / 24.0)
+                    self.reward_intermedis[winner_team] += 1.5 * (pts_truc / 24.0)   # qui va forçar el fora: 1.5x
+                    self.reward_intermedis[1-winner_team] -= 1.0 * (pts_truc / 24.0)  # qui fa fora: 1.0x (retirada estratègica)
 
                     if max(self.score) >= self.puntuacio_final:
                         return self.get_state(self.current_player), self.current_player
@@ -276,8 +274,8 @@ class TrucGame:
             self.ultim_guanyador_truc = (winner, pts_truc)
             
             # Reward intermedi de truc (fora - VOLUNTARI)
-            self.reward_intermedis[winner] += 2.0 * (pts_truc / 24.0)
-            self.reward_intermedis[1-winner] -= 2.0 * (pts_truc / 24.0)
+            self.reward_intermedis[winner] += 1.0 * (pts_truc / 24.0)    # oponent: benefici normal
+            self.reward_intermedis[1-winner] -= 2.5 * (pts_truc / 24.0)  # covard: penalització forta
 
             if max(self.score) >= self.puntuacio_final:
                 return self.get_state(self.current_player), None
@@ -301,8 +299,8 @@ class TrucGame:
                 pes = self._pes_ronda(self.round_counter, self.ronda_winners)
                 if winner is not None:
                     eq_w = winner % 2
-                    self.reward_intermedis[eq_w] += 0.5 * pes
-                    self.reward_intermedis[1-eq_w] -= 0.5 * pes
+                    self.reward_intermedis[eq_w] += 0.40 * pes   # guanyar ronda: fort
+                    self.reward_intermedis[1-eq_w] -= 0.20 * pes  # perdre ronda: moderat
 
                 if winner is not None:
                     self.turn_player = winner
