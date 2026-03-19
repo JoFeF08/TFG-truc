@@ -29,21 +29,21 @@ from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
 from joc.entorn.cartes_accions import ACTION_LIST
 
 # Hyperparams Constants
-NUM_ENVS = 48 
+NUM_ENVS = 48
 NUM_STEPS = 256
-MINIBATCH_ENVS = 8
-UPDATE_EPOCHS = 7
-TOTAL_TIMESTEPS = 24_000_000
-LR = 3e-4
+MINIBATCH_ENVS = 12       # 8→12: gradients més estables en TBPTT
+UPDATE_EPOCHS = 5          # 7→5: menys epochs evita overfitting en xarxes recurrents
+TOTAL_TIMESTEPS = 60_000_000  # 24M→60M: jocs de cartes requereixen més entrenament
+LR = 2e-4                  # 3e-4→2e-4: lleugerament menor per estabilitat GRU
 GAMMA = 0.995
 GAE_LAMBDA = 0.95
 CLIP_COEF = 0.2
-ENT_COEF = 0.01
+ENT_COEF = 0.02            # 0.01→0.02: més exploració en joc de cartes amb moltes accions
 VF_COEF = 0.5
 
 # Fine-tune Constants
 FINETUNE_LR_COS = 1e-5
-UNFREEZE_FRACTION = 0.15
+UNFREEZE_FRACTION = 0.20   # 0.15→0.20: esperar més per descongelar COS
 
 GOLDEN_PATH = Path(__file__).parent / "golden_ppo_gru.pt"
 
@@ -157,7 +157,7 @@ def main():
 
     # 20% pool
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
-    POOL_FREQUENCY = 500
+    POOL_FREQUENCY = 300  # 500→300: renovar oponents amb més freqüència
     pool_player_ids = {}
     for i in range(NUM_ENVS - NUM_POOL_ENVS, NUM_ENVS):
         pool_player_ids[i] = i % 2
