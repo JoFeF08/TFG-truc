@@ -64,7 +64,7 @@ def extract_obs(states_list):
     return torch.tensor(np.array(b_obs), dtype=torch.float32), torch.tensor(np.array(b_masks), dtype=torch.bool)
 
 
-def evaluar_contra_random(agent, env_config, device, num_partides=20):
+def evaluar_contra_random(agent, env_config, device, num_partides=50):
     """Evalua l'agent PPO contra un agent que tria accions aleatòries."""
     eval_env = TrucEnv(env_config)
     eval_env.set_agents([agent, RandomAgent(num_actions=len(ACTION_LIST))])
@@ -298,8 +298,8 @@ def main():
             eval_rev, eval_wr = evaluar_contra_random(agent, env_config, device)
             _, eval_wr_golden = evaluar_contra_golden(agent, golden_agent, env_config)
 
-            metric = eval_wr_golden if golden_agent is not None else eval_wr
-            if metric >= best_eval_wr:
+            metric = (0.3 * eval_wr + 0.7 * eval_wr_golden) if golden_agent is not None else eval_wr
+            if metric > best_eval_wr:
                 best_eval_wr = metric
                 torch.save(net.state_dict(), save_dir / "best.pt")
                 tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% golden={eval_wr_golden:.1f}%! Model guardat.")
