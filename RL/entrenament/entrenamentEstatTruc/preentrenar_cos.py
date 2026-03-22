@@ -34,8 +34,7 @@ LR              = 0.001
 WEIGHT_DECAY    = 1e-4  # Regularització L2
 PATIENCE        = 10    # Early Stopping
 N_CARTES_MA     = 3       
-ENVIT_MAX       = 24
-MAX_FORCA_TRUC  = 330
+ENVIT_MAX       = 35
 N_ACCIONS       = len(ACTION_LIST)
 
 # Carpetes de sortida
@@ -65,8 +64,8 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
     cartes_np  = np.zeros((num_mostres, 6, 4, 9), dtype=np.float32)
     context_np = np.zeros((num_mostres, 23), dtype=np.float32)
     labels_envit_np = np.zeros((num_mostres, 1), dtype=np.float32)
-    labels_truc_np   = np.zeros((num_mostres, 1), dtype=np.float32)
     labels_accions_np= np.zeros((num_mostres, 19), dtype=np.float32)
+    labels_forces_np = np.zeros((num_mostres, 3), dtype=np.float32)
 
     if env_base is None:
         env_base = TrucEnv(config={'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 12, 'senyes': True})
@@ -96,14 +95,21 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
             player_obj = env_base.game.players[pid]
             ma_inicial_strings = [c for c in player_obj.initial_hand]
             punts_envido = TrucJudger.get_envit_ma(ma_inicial_strings)
-            forca = sum(TrucJudger.get_forca_carta(c) for c in ma_inicial_strings)
             
+            # Etiquetes de Força per posició
+            ma_actual = list(player_obj.hand)
+            ma_actual.sort(key=lambda c: TrucJudger.get_forca_carta(c), reverse=True)
+            forces_pos = np.zeros(3, dtype=np.float32)
+            for j, carta in enumerate(ma_actual):
+                if j < 3:
+                    forces_pos[j] = TrucJudger.get_forca_carta(carta) / 110.0
+
             if mostres_recollides < num_mostres:
                 cartes_np[mostres_recollides] = obs_cartes
                 context_np[mostres_recollides] = obs_context
                 labels_envit_np[mostres_recollides, 0] = punts_envido / ENVIT_MAX
-                labels_truc_np[mostres_recollides, 0]   = forca / MAX_FORCA_TRUC
                 labels_accions_np[mostres_recollides]   = labels_acc
+                labels_forces_np[mostres_recollides]    = forces_pos
                 
                 mostres_recollides += 1
                 pbar.update(1)
@@ -120,11 +126,11 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
             state, current_player = env_base.step(acció_escollida)
             
     pbar.close()
-    return (torch.tensor(cartes_np), 
-            torch.tensor(context_np), 
-            torch.tensor(labels_envit_np), 
-            torch.tensor(labels_truc_np),
-            torch.tensor(labels_accions_np))
+    return (torch.tensor(cartes_np),
+            torch.tensor(context_np),
+            torch.tensor(labels_envit_np),
+            torch.tensor(labels_accions_np),
+            torch.tensor(labels_forces_np))
 
 # Bucle d'entrenament principal
 def entrenar():
@@ -136,9 +142,9 @@ def entrenar():
 
     # Validation Split
     env_generador = TrucEnv(config={'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 12, 'senyes': True})
-    t_cartes, t_context, t_lenv, t_ltruc, t_lacc = generar_dataset_estatic(MIDA_DATASET, env_generador)
-    
-    dataset_complet = TensorDataset(t_cartes, t_context, t_lenv, t_ltruc, t_lacc)
+    t_cartes, t_context, t_lenv, t_lacc, t_lforces = generar_dataset_estatic(MIDA_DATASET, env_generador)
+
+    dataset_complet = TensorDataset(t_cartes, t_context, t_lenv, t_lacc, t_lforces)
     
     n_val = int(MIDA_DATASET * VAL_SPLIT)
     n_train = MIDA_DATASET - n_val
@@ -154,13 +160,13 @@ def entrenar():
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimitzador, mode='min', factor=0.5, patience=5)
 
     # Pesos per la Loss (Balanç de caps)
-    W_ENVIT = 1.0
-    W_TRUC  = 1.0
-    W_ACC   = 2.0  # Li donem més pes a aprendre les accions legals
+    W_ENVIT  = 1.0
+    W_ACC    = 2.0
+    W_FORCES = 2.5
 
     log_path = LOG_DIR / "preentrenament_log.csv"
     with open(log_path, "w", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow(["epoca", "train_loss", "val_loss", "val_env", "val_truc", "val_acc", "lr"])
+        csv.writer(f).writerow(["epoca", "train_loss", "val_loss", "val_env", "val_acc", "val_forces", "lr"])
 
     # Early Stopping state
     best_val_loss = float('inf')
@@ -174,8 +180,8 @@ def entrenar():
         # Regenerar el dataset si toca
         if epoca > 1 and (epoca - 1) % REGENERATE_EVERY_N_EPOCHS == 0:
             print(f"\n[INFO] Època {epoca}: Regenerant dades de preentrenament de forma dinàmica...")
-            t_cartes, t_context, t_lenv, t_ltruc, t_lacc = generar_dataset_estatic(MIDA_DATASET, env_generador)
-            dataset_complet = TensorDataset(t_cartes, t_context, t_lenv, t_ltruc, t_lacc)
+            t_cartes, t_context, t_lenv, t_lacc, t_lforces = generar_dataset_estatic(MIDA_DATASET, env_generador)
+            dataset_complet = TensorDataset(t_cartes, t_context, t_lenv, t_lacc, t_lforces)
             train_dataset, val_dataset = torch.utils.data.random_split(dataset_complet, [n_train, n_val])
             train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
             val_loader   = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -185,17 +191,18 @@ def entrenar():
         train_loss_total = 0.0
         
         pbar_train = tqdm(train_loader, desc=f"Epoca {epoca}/{NUM_EPOCHS} [Train]", leave=False)
-        for cartes, context, labels_env, labels_truc, labels_acc in pbar_train:
+        for cartes, context, labels_env, labels_acc, labels_forces in pbar_train:
             cartes, context = cartes.to(DEVICE), context.to(DEVICE)
-            labels_env, labels_truc, labels_acc = labels_env.to(DEVICE), labels_truc.to(DEVICE), labels_acc.to(DEVICE)
-            
+            labels_env, labels_acc = labels_env.to(DEVICE), labels_acc.to(DEVICE)
+            labels_forces = labels_forces.to(DEVICE)
+
             optimitzador.zero_grad()
-            pred_env, pred_truc, pred_acc = model(cartes, context)
-            
-            loss_env  = criteri_mse(pred_env, labels_env)
-            loss_truc = criteri_mse(pred_truc, labels_truc)
-            loss_acc  = criteri_bce(pred_acc, labels_acc)
-            loss_total = (W_ENVIT * loss_env) + (W_TRUC * loss_truc) + (W_ACC * loss_acc)
+            pred_env, pred_acc, pred_forces = model(cartes, context)
+
+            loss_env    = criteri_mse(pred_env, labels_env)
+            loss_acc    = criteri_bce(pred_acc, labels_acc)
+            loss_forces = criteri_mse(pred_forces, labels_forces)
+            loss_total  = (W_ENVIT * loss_env) + (W_ACC * loss_acc) + (W_FORCES * loss_forces)
             
             loss_total.backward()
             optimitzador.step()
@@ -208,29 +215,30 @@ def entrenar():
         # Validació
         model.eval()
         val_loss_total = 0.0
-        v_env_tot, v_truc_tot, v_acc_tot = 0.0, 0.0, 0.0
-        
+        v_env_tot, v_acc_tot, v_forces_tot = 0.0, 0.0, 0.0
+
         with torch.no_grad():
-            for cartes, context, labels_env, labels_truc, labels_acc in val_loader:
+            for cartes, context, labels_env, labels_acc, labels_forces in val_loader:
                 cartes, context = cartes.to(DEVICE), context.to(DEVICE)
-                labels_env, labels_truc, labels_acc = labels_env.to(DEVICE), labels_truc.to(DEVICE), labels_acc.to(DEVICE)
-                
-                pred_env, pred_truc, pred_acc = model(cartes, context)
-                
-                loss_env  = criteri_mse(pred_env, labels_env)
-                loss_truc = criteri_mse(pred_truc, labels_truc)
-                loss_acc  = criteri_bce(pred_acc, labels_acc)
-                loss_total = (W_ENVIT * loss_env) + (W_TRUC * loss_truc) + (W_ACC * loss_acc)
-                
+                labels_env, labels_acc = labels_env.to(DEVICE), labels_acc.to(DEVICE)
+                labels_forces = labels_forces.to(DEVICE)
+
+                pred_env, pred_acc, pred_forces = model(cartes, context)
+
+                loss_env    = criteri_mse(pred_env, labels_env)
+                loss_acc    = criteri_bce(pred_acc, labels_acc)
+                loss_forces = criteri_mse(pred_forces, labels_forces)
+                loss_total  = (W_ENVIT * loss_env) + (W_ACC * loss_acc) + (W_FORCES * loss_forces)
+
                 val_loss_total += loss_total.item() * cartes.size(0)
                 v_env_tot += loss_env.item() * cartes.size(0)
-                v_truc_tot += loss_truc.item() * cartes.size(0)
                 v_acc_tot += loss_acc.item() * cartes.size(0)
-                
-        val_loss_avg = val_loss_total / n_val
-        val_env_avg  = v_env_tot / n_val
-        val_truc_avg = v_truc_tot / n_val
-        val_acc_avg  = v_acc_tot / n_val
+                v_forces_tot += loss_forces.item() * cartes.size(0)
+
+        val_loss_avg    = val_loss_total / n_val
+        val_env_avg     = v_env_tot / n_val
+        val_acc_avg     = v_acc_tot / n_val
+        val_forces_avg  = v_forces_tot / n_val
         
         # Actualització del Scheduler
         scheduler.step(val_loss_avg)
@@ -238,13 +246,13 @@ def entrenar():
 
         # Guardem els logs
         with open(log_path, "a", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow([epoca, train_loss_avg, val_loss_avg, val_env_avg, val_truc_avg, val_acc_avg, lr_actual])
+            csv.writer(f).writerow([epoca, train_loss_avg, val_loss_avg, val_env_avg, val_acc_avg, val_forces_avg, lr_actual])
         
         PRINT_CADA = max(1, NUM_EPOCHS // 20)
         
         if epoca % PRINT_CADA == 0 or epoca == 1 or epoca == NUM_EPOCHS:
             print(f"Epoca {epoca:03d}/{NUM_EPOCHS} | Train Loss: {train_loss_avg:.4f} | Val Loss: {val_loss_avg:.4f} "
-                  f"(Env: {val_env_avg:.4f}, Truc: {val_truc_avg:.4f}, Acc: {val_acc_avg:.4f})")
+                  f"(Env: {val_env_avg:.4f}, Acc: {val_acc_avg:.4f}, Forces: {val_forces_avg:.4f})")
               
         # Early Stopping logic
         if val_loss_avg < best_val_loss:

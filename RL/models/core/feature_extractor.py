@@ -65,26 +65,26 @@ class ModelPreEntrenament(nn.Module):
 
     Combina el CosMultiInput amb tres caps de regressió/classificació per predir:
       - Els punts d'Envit (normalitzats, MSE).
-      - La força de la mà pel Truc (suma de força de cartes normalitzada, MSE).
       - Les accions legals permeses en l'estat actual (19 logits, BCE).
+      - La força de cada carta per posició de mà (3 valors, MSE).
     """
 
     def __init__(self):
         super().__init__()
         self.cos = CosMultiInput()
         self.cap_envido = nn.Linear(128, 1)
-        self.cap_truc = nn.Linear(128, 1)
         self.cap_accions_legals = nn.Linear(128, 19)
+        self.cap_forces = nn.Linear(128, 3)
 
     def forward(self, cartes: torch.Tensor, context: torch.Tensor):
         """
         Returns:
-            val_envido   : (batch, 1)
-            val_truc     : (batch, 1)
+            val_envido     : (batch, 1)
             logits_accions : (batch, 19)
+            val_forces     : (batch, 3)
         """
         latent = self.cos(cartes, context)
         val_envido = self.cap_envido(latent)
-        val_truc = self.cap_truc(latent)
         logits_accions = self.cap_accions_legals(latent)
-        return val_envido, val_truc, logits_accions
+        val_forces = self.cap_forces(latent)
+        return val_envido, logits_accions, val_forces
