@@ -9,7 +9,7 @@ OBS_CARTES_SHAPE = (6, 4, 9)
 SPLIT = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2] # 216
 OBS_CONTEXT_SIZE = 23
 
-COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent.parent / "entrenament" / "entrenamentEstatTruc" / "registres" / "13_03_26_a_les_1909" / "models" / "best_pesos_cos_truc.pth")
+COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent.parent / "entrenament" / "entrenamentEstatTruc" / "registres" / "22_03_26_a_les_0118" / "models" / "best_pesos_cos_truc.pth")
 
 class PPOMlpNet(nn.Module):
     """

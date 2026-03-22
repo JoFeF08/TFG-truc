@@ -8,7 +8,7 @@
     --nofollow-import-to=torchvision `
     --nofollow-import-to=torchaudio `
     --nofollow-import-to=onnxruntime `
-    --include-data-files="RL/models/best.npz=RL/models/best.npz" `
+    --include-data-files="best.pt=best.pt" `
     --include-data-files="icona.ico=icona.ico" `
     --include-data-dir="joc/vista/vista_desktop/img_iu=joc/vista/vista_desktop/img_iu" `
     --include-package-data=rlcard `
