@@ -39,7 +39,7 @@ def resource_path(relative_path):
 
 
 MODEL_PATH = resource_path("best.pt")
-TIPUS_AGENT = "ppo_mlp"
+TIPUS_AGENT = "ppo_gru"
 
 config = {
     "num_jugadors": 2,

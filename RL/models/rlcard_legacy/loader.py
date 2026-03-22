@@ -37,6 +37,12 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
             spec["ruta"] = "best.pt"
         return _crear_ppo_mlp(spec, env_config)
 
+    if tipus == "ppo_gru":
+        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_gru
+        if not spec.get("ruta"):
+            spec["ruta"] = "best.pt"
+        return _crear_ppo_gru(spec, env_config)
+
     # Si es "default", usem PPO MLP per defecte
     if tipus == "default":
         from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
