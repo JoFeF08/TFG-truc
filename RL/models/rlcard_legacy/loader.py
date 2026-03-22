@@ -43,6 +43,13 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
             spec["ruta"] = "best.pt"
         return _crear_ppo_gru(spec, env_config)
 
+    if tipus == "regles":
+        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_env_temp, _RLCardModelAdapter
+        from RL.models.model_propi.agent_regles import AgentRegles
+        env_wrapped = _crear_env_temp(env_config)
+        agent = AgentRegles(num_actions=env_wrapped.num_actions, seed=spec.get("seed"))
+        return _RLCardModelAdapter(agent, env_wrapped._extract_state)
+
     # Si es "default", usem PPO MLP per defecte
     if tipus == "default":
         from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp

@@ -92,6 +92,9 @@ class VistaDesktop:
         self._queued_points = [] 
         self._last_ma_for_log = -1 # -1 ens permet saber que encara no hem processat cap frame
         self._last_ronda_for_log = -1
+        self._show_rival_cards = False
+        self._last_accions_legals = []
+        self._last_readonly = True
 
     def _ensure_tk(self):
         if self._root is not None:
@@ -306,6 +309,8 @@ class VistaDesktop:
         state_for_ui["puntuacio"] = list(self._visual_score)
         
         self._last_state = state
+        self._last_accions_legals = accions_legals
+        self._last_readonly = readonly
         self._clear()
         root = self._root
 
@@ -387,6 +392,18 @@ class VistaDesktop:
         log_panel.pack(side="right", fill="y")
         log_panel.pack_propagate(False)
 
+        # --- Botó per girar cartes del rival ---
+        def toggle_rival_cards():
+            self._show_rival_cards = not self._show_rival_cards
+            self._schedule(self._build_game_ui, self._last_accions_legals, self._last_state, self._last_readonly)
+
+        toggle_btn_frame = tk.Frame(table_frame, bg=BG_TABLE)
+        toggle_btn_frame.pack(anchor="w", pady=(0, 2))
+        btn_lbl = "Amagar cartes rival" if self._show_rival_cards else "Veure cartes rival"
+        tk.Button(toggle_btn_frame, text=btn_lbl, command=toggle_rival_cards,
+                  bg=BG_BTN_CARD, fg="white", relief="flat", padx=8, pady=4,
+                  font=("", 9), cursor="hand2").pack(side="left")
+
         # --- Taula: info, columnes d'altres jugadors, cartes jugades, puntuació, jugador actual ---
         info_row = tk.Frame(table_frame, bg=BG_TABLE)
         info_row.pack(pady=(0, 6))
@@ -422,7 +439,7 @@ class VistaDesktop:
             for i in range(3):
                 if i < n_restants:
                     codi = cartes_rival[i] if i < len(cartes_rival) else None
-                    img = self._get_card_image(codi) if codi else None
+                    img = self._get_card_image(codi) if (codi and self._show_rival_cards) else None
                     if img:
                         tk.Label(hand_f, image=img, bg=BG_TABLE).pack(side="left", padx=2)
                     elif dors_img:
