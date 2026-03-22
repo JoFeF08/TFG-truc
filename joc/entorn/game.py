@@ -60,6 +60,7 @@ class TrucGame:
         self.dealer.shuffle()
         for player in self.players:
             self.dealer.deal_cards(player)
+            player.hand.sort(key=lambda c: TrucJudger.get_forca_carta(c), reverse=True)
             player.initial_hand = list(player.hand)
 
         # Estat del Joc
@@ -275,7 +276,7 @@ class TrucGame:
             
             # Reward intermedi de truc (fora - VOLUNTARI)
             self.reward_intermedis[winner] += 1.0 * (pts_truc / 24.0)    # oponent: benefici normal
-            self.reward_intermedis[1-winner] -= 2.5 * (pts_truc / 24.0)  # covard: penalització forta
+            self.reward_intermedis[1-winner] -= 1.2 * (pts_truc / 24.0)  # penalització moderada (permet retirada estratègica)
 
             if max(self.score) >= self.puntuacio_final:
                 return self.get_state(self.current_player), None
@@ -532,6 +533,7 @@ class TrucGame:
         for player in self.players:
             player.hand = [] # Netejar mà vella
             self.dealer.deal_cards(player)
+            player.hand.sort(key=lambda c: TrucJudger.get_forca_carta(c), reverse=True)
             player.initial_hand = list(player.hand)
             
         # Reset variables
