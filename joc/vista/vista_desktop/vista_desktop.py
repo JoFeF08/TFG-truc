@@ -321,6 +321,7 @@ class VistaDesktop:
         estat_envit = state_for_ui.get("estat_envit", {})
 
         num_jugadors = state_for_ui.get("num_jugadors", self._config.get("num_jugadors", 2))
+        mans_rivals = state_for_ui.get("mans_rivals", {})
         dors_img = self._get_dors_image()
         is_fase_cartes = fase_torn == 1
 
@@ -415,11 +416,16 @@ class VistaDesktop:
             tk.Label(f, text=etiqueta, bg=BG_TABLE, fg=FG_DIM, font=("", 10)).pack()
             hand_f = tk.Frame(f, bg=BG_TABLE)
             hand_f.pack(pady=2)
-            
+
+            cartes_rival = mans_rivals.get(pid, [])
             n_restants = cards_count(pid)
             for i in range(3):
                 if i < n_restants:
-                    if dors_img:
+                    codi = cartes_rival[i] if i < len(cartes_rival) else None
+                    img = self._get_card_image(codi) if codi else None
+                    if img:
+                        tk.Label(hand_f, image=img, bg=BG_TABLE).pack(side="left", padx=2)
+                    elif dors_img:
                         tk.Label(hand_f, image=dors_img, bg=BG_TABLE).pack(side="left", padx=2)
                     else:
                         tk.Label(hand_f, text="?", bg="#2d5a30", fg=FG_DIM,
