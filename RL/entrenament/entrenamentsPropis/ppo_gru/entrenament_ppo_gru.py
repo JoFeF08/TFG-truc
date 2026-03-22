@@ -346,5 +346,12 @@ def main():
             
     vec_env.close()
 
+    # Netejar checkpoints intermedis, només queda best.pt i el log
+    for f in save_dir.glob("checkpoint_update_*.pt"):
+        f.unlink()
+    for f in save_dir.glob("ppo_gru_update_*.pt"):
+        f.unlink()
+    print(f"[Cleanup] Checkpoints intermedis eliminats. Només queda best.pt")
+
 if __name__ == "__main__":
     main()
