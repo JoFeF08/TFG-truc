@@ -30,6 +30,7 @@ from RL.models.model_propi.ppo_gru.agent_ppo_gru import PPOGruAgent
 from RL.entrenament.entrenamentsPropis.ppo_gru.buffers_ppo_gru import RolloutBufferGRU
 from rlcard.agents import RandomAgent
 from joc.entorn.env import TrucEnv          # Per avaluació (joc sencer)
+from RL.models.model_propi.agent_regles import AgentRegles
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo_nucleu
 from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
 from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
@@ -79,6 +80,19 @@ def evaluar_contra_random(agent, env_config, device, num_partides=50):
         recompensa = payoffs[0]
         recompenses.append(recompensa)
         if recompensa > 0:
+            victories += 1
+    return np.mean(recompenses), (victories / num_partides) * 100
+
+
+def evaluar_contra_regles(agent, regles_agent, env_config, num_partides=100):
+    eval_env = TrucEnv(env_config)
+    eval_env.set_agents([agent, regles_agent])
+    recompenses = []
+    victories = 0
+    for _ in range(num_partides):
+        _, payoffs = eval_env.run(is_training=False)
+        recompenses.append(payoffs[0])
+        if payoffs[0] > 0:
             victories += 1
     return np.mean(recompenses), (victories / num_partides) * 100
 
@@ -154,6 +168,9 @@ def main():
     else:
         print(f"[Golden] No trobat. Avaluacio nomes contra random.")
 
+    regles_agent = AgentRegles(num_actions=n_acc, seed=123)
+    print(f"[Regles] Agent de regles inicialitzat.")
+
     NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
     POOL_FREQUENCY = 300
     pool_player_ids = {}
@@ -179,11 +196,11 @@ def main():
 
     with open(log_file, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward", "eval_wr_golden"])
+        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward", "eval_wr_regles", "eval_wr_golden"])
 
     best_eval_wr = -1.0
     pbar = trange(1, num_updates + 1, desc="Actualitzacions")
-    eval_wr, eval_rev, eval_wr_golden = 0.0, 0.0, 0.0
+    eval_wr, eval_rev, eval_wr_regles, eval_wr_golden = 0.0, 0.0, 0.0, 0.0
 
     for update in pbar:
         batch_rewards = []
@@ -307,24 +324,29 @@ def main():
         mean_reward = np.mean(batch_rewards)
         if update % 50 == 0:
             eval_rev, eval_wr = evaluar_contra_random(agent, env_config_eval, device)
+            _, eval_wr_regles = evaluar_contra_regles(agent, regles_agent, env_config_eval)
             _, eval_wr_golden = evaluar_contra_golden(agent, golden_agent, env_config_eval)
 
-            metric = (0.3 * eval_wr + 0.7 * eval_wr_golden) if golden_agent is not None else eval_wr
+            if golden_agent is not None:
+                metric = 0.15 * eval_wr + 0.35 * eval_wr_regles + 0.5 * eval_wr_golden
+            else:
+                metric = 0.3 * eval_wr + 0.7 * eval_wr_regles
             if metric > best_eval_wr:
                 best_eval_wr = metric
                 torch.save(net.state_dict(), save_dir / "best.pt")
-                tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% golden={eval_wr_golden:.1f}%! Model guardat.")
+                tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% regles={eval_wr_regles:.1f}% golden={eval_wr_golden:.1f}%! Model guardat.")
 
         if update % 10 == 0:
             pbar.set_postfix({
                 "Rew": f"{mean_reward:.4f}",
                 "V": f"{v_loss.item():.3f}",
                 "WR%": f"{eval_wr:.1f}",
+                "RWR%": f"{eval_wr_regles:.1f}",
                 "GWR%": f"{eval_wr_golden:.1f}"
             })
             with open(log_file, "a", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_golden])
+                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_regles, eval_wr_golden])
 
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_gru_update_{update}.pt")
