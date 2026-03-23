@@ -26,6 +26,8 @@ from rlcard.agents import RandomAgent
 from joc.entorn.env import TrucEnv
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo
 from joc.entorn.cartes_accions import ACTION_LIST
+from RL.models.model_propi.agent_regles import AgentRegles
+from RL.entrenament.entrenamentsPropis.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
 
 # Hyperparams Constants
 NUM_ENVS = 48
@@ -45,67 +47,13 @@ FINETUNE_LR_COS = 1e-5
 FINETUNE_LR_MLP = 1e-4
 UNFREEZE_FRACTION = 0.15
 
-GOLDEN_PATH = Path(__file__).parent / "golden_ppo.pt"
-
-def extract_obs(states_list):
-    b_obs = []
-    b_masks = []
-    
-    for state in states_list:
-        raw_obs = state['obs']
-        flat = np.concatenate([raw_obs['obs_cartes'].flatten(), raw_obs['obs_context']], axis=0)
-        b_obs.append(flat)
-        
-        mask = np.zeros(len(ACTION_LIST), dtype=bool)
-        legal = list(state['legal_actions'].keys()) if hasattr(state['legal_actions'], 'keys') else state['legal_actions']
-        mask[legal] = True
-        b_masks.append(mask)
-
-    return torch.tensor(np.array(b_obs), dtype=torch.float32), torch.tensor(np.array(b_masks), dtype=torch.bool)
-
-
-def evaluar_contra_random(agent, env_config, device, num_partides=50):
-    """Evalua l'agent PPO contra un agent que tria accions aleatòries."""
-    eval_env = TrucEnv(env_config)
-    eval_env.set_agents([agent, RandomAgent(num_actions=len(ACTION_LIST))])
-
-    recompenses = []
-    victories = 0
-
-    for _ in range(num_partides):
-        trajectoria, payoffs = eval_env.run(is_training=False)
-        recompensa = payoffs[0]
-        recompenses.append(recompensa)
-        if recompensa > 0:
-            victories += 1
-
-    return np.mean(recompenses), (victories / num_partides) * 100
-
-
-def evaluar_contra_golden(agent, golden_agent, env_config, num_partides=100):
-    """Evalua l'agent contra el golden opponent fix (PPO simple)."""
-    if golden_agent is None:
-        return 0.0, 0.0
-
-    eval_env = TrucEnv(env_config)
-    eval_env.set_agents([agent, golden_agent])
-
-    recompenses = []
-    victories = 0
-
-    for _ in range(num_partides):
-        _, payoffs = eval_env.run(is_training=False)
-        recompenses.append(payoffs[0])
-        if payoffs[0] > 0:
-            victories += 1
-
-    return np.mean(recompenses), (victories / num_partides) * 100
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["scratch", "frozen", "finetune"], default="frozen")
     parser.add_argument("--total_timesteps", type=int, default=TOTAL_TIMESTEPS)
+    parser.add_argument("--load_model", type=str, default=None, help="Ruta al model .pt a carregar")
+    parser.add_argument("--save_dir", type=str, default=None, help="Directori on guardar els resultats")
     args = parser.parse_args()
     
     total_timesteps = args.total_timesteps
@@ -126,6 +74,11 @@ def main():
     
     n_accions = len(ACTION_LIST)
     net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+    
+    if args.load_model and os.path.exists(args.load_model):
+        net.load_state_dict(torch.load(args.load_model, map_location=device, weights_only=True))
+        print(f"[Init] Model carregat correctament des de: {args.load_model}")
+
     agent = PPOMlpAgent(net, n_accions, device=device)
     
     # Pool d'Oponents
@@ -143,23 +96,26 @@ def main():
                     opponent_pool.append(best_path)
     print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
 
-    # Carregar golden opponent (PPO simple fix)
-    golden_agent = None
-    if GOLDEN_PATH.exists():
-        golden_net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
-        golden_net.load_state_dict(torch.load(GOLDEN_PATH, map_location=device, weights_only=True))
-        golden_agent = PPOMlpAgent(golden_net, n_accions, device=device)
-        print(f"[Golden] Carregat: {GOLDEN_PATH.name}")
-    else:
-        print(f"[Golden] No trobat: {GOLDEN_PATH.name}. Avaluació només contra random.")
+    regles_agent_eval = AgentRegles(num_actions=n_accions, seed=123)
+    regles_agent_train = AgentRegles(num_actions=n_accions, seed=456)
+    random_agent_train = RandomAgent(num_actions=n_accions)
+    print(f"[Regles/Random] Agents inicialitzats.")
 
-    # 20% pool
-    NUM_POOL_ENVS = int(NUM_ENVS * 0.2)
-    POOL_FREQUENCY = 500  # Reduït de 100 a 500 per menys overhead de carregament
+    n_envs_random = int(NUM_ENVS * 0.10)
+    n_envs_regles = int(NUM_ENVS * 0.20)
+    n_envs_pool   = int(NUM_ENVS * 0.20)
+    POOL_FREQUENCY = 500
 
-    pool_player_ids = {} # env_idx -> id_jugador
-    for i in range(NUM_ENVS - NUM_POOL_ENVS, NUM_ENVS):
-        pool_player_ids[i] = i % 2
+    fixed_opponents = {}
+    current_idx = 0
+    for i in range(current_idx, current_idx + n_envs_random):
+        fixed_opponents[i] = {'type': 'random', 'pid': i % 2}
+    current_idx += n_envs_random
+    for i in range(current_idx, current_idx + n_envs_regles):
+        fixed_opponents[i] = {'type': 'regles', 'pid': i % 2}
+    current_idx += n_envs_regles
+    for i in range(current_idx, current_idx + n_envs_pool):
+        fixed_opponents[i] = {'type': 'pool', 'pid': i % 2}
     
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
     
@@ -173,17 +129,20 @@ def main():
     global_step = 0
     num_updates = total_timesteps // (NUM_ENVS * NUM_STEPS)
     
-    timestamp = datetime.now().strftime("%dd_%mm_%H%Mh")
-    save_dir = Path(__file__).parent / "registres" / f"ppo_mlp_{timestamp}"
+    if args.save_dir:
+        save_dir = Path(args.save_dir)
+    else:
+        timestamp = datetime.now().strftime("%dd_%mm_%H%Mh")
+        save_dir = Path(__file__).parent / "registres" / f"ppo_mlp_{timestamp}"
     save_dir.mkdir(parents=True, exist_ok=True)
     log_file = save_dir / "training_log.csv"
     
     with open(log_file, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward", "eval_wr_golden"])
+        writer.writerow(["update", "global_step", "pg_loss", "v_loss", "ent_loss", "reward_mean", "eval_wr", "eval_reward", "eval_wr_regles"])
 
     pbar = trange(1, num_updates + 1, desc="Actualitzacions")
-    eval_wr, eval_rev, eval_wr_golden = 0.0, 0.0, 0.0
+    eval_wr, eval_rev, eval_wr_regles = 0.0, 0.0, 0.0
     
     best_eval_wr = -1.0
     for update in pbar:
@@ -219,15 +178,22 @@ def main():
                 action = dist.sample()
                 logprob = dist.log_prob(action)
             
-            # Sobreescriure accions de la Pool si toca
-            if len(opponent_pool) > 0:
-                for i in pool_player_ids:
-                    if active_players[i] == pool_player_ids[i]:
+            # Sobreescriure accions (Random, Regles, Pool)
+            for i, opp_info in fixed_opponents.items():
+                if active_players[i] == opp_info['pid']:
+                    if opp_info['type'] == 'random':
+                        action_idx, _ = random_agent_train.eval_step(current_states[i])
+                        action[i] = action_idx
+                        is_learning_step[i] = 0.0
+                    elif opp_info['type'] == 'regles':
+                        action_idx, _ = regles_agent_train.eval_step(current_states[i])
+                        action[i] = action_idx
+                        is_learning_step[i] = 0.0
+                    elif opp_info['type'] == 'pool' and len(opponent_pool) > 0:
                         with torch.no_grad():
                             p_logits, _ = pool_net(obs_tensor[i:i+1])
                             p_logits = p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)
                             p_action = torch.distributions.Categorical(logits=p_logits).sample()
-                        
                         action[i] = p_action
                         is_learning_step[i] = 0.0
             
@@ -296,24 +262,24 @@ def main():
         mean_reward = np.mean(batch_rewards)
         if update % 50 == 0:
             eval_rev, eval_wr = evaluar_contra_random(agent, env_config, device)
-            _, eval_wr_golden = evaluar_contra_golden(agent, golden_agent, env_config)
+            _, eval_wr_regles = evaluar_contra_regles(agent, regles_agent_eval, env_config)
 
-            metric = (0.3 * eval_wr + 0.7 * eval_wr_golden) if golden_agent is not None else eval_wr
+            metric = 0.25 * eval_wr + 0.75 * eval_wr_regles
             if metric > best_eval_wr:
                 best_eval_wr = metric
                 torch.save(net.state_dict(), save_dir / "best.pt")
-                tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% golden={eval_wr_golden:.1f}%! Model guardat.")
+                tqdm.write(f" -> Nou millor: random={eval_wr:.1f}% regles={eval_wr_regles:.1f}%! Model guardat.")
 
         if update % 10 == 0:
             pbar.set_postfix({
                 "Rew": f"{mean_reward:.4f}",
                 "V": f"{v_loss.item():.3f}",
                 "WR%": f"{eval_wr:.1f}",
-                "GWR%": f"{eval_wr_golden:.1f}"
+                "RWR%": f"{eval_wr_regles:.1f}"
             })
             with open(log_file, "a", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_golden])
+                writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_regles])
                 
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_update_{update}.pt")
