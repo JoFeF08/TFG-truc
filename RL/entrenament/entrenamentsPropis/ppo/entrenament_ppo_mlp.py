@@ -23,7 +23,6 @@ from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_
 from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
 from rlcard.agents import RandomAgent
-from joc.entorn.env import TrucEnv
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.agent_regles import AgentRegles
@@ -281,6 +280,9 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_regles])
                 
+        if update % 100 == 0:
+            torch.cuda.empty_cache()
+
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_update_{update}.pt")
             

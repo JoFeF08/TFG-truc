@@ -23,10 +23,8 @@ from RL.models.model_propi.ppo_gru.cap_ppo_gru import PPOGruNet
 from RL.models.model_propi.ppo_gru.agent_ppo_gru import PPOGruAgent
 from RL.entrenament.entrenamentsPropis.ppo_gru.buffers_ppo_gru import RolloutBufferGRU
 from rlcard.agents import RandomAgent
-from joc.entorn.env import TrucEnv
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo_nucleu
-from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
-from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
+from RL.models.model_propi.ppo.cap_ppo_mlp import SPLIT, OBS_CONTEXT_SIZE
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.agent_regles import AgentRegles
 from RL.entrenament.entrenamentsPropis.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
@@ -309,6 +307,9 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_regles])
                 
+        if update % 100 == 0:
+            torch.cuda.empty_cache()
+
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_gru_update_{update}.pt")
             

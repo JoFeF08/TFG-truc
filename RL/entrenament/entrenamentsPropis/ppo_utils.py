@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 import torch
 from rlcard.agents import RandomAgent
@@ -21,7 +22,7 @@ def extract_obs(states_list):
     return torch.tensor(np.array(b_obs), dtype=torch.float32), torch.tensor(np.array(b_masks), dtype=torch.bool)
 
 
-def evaluar_contra_random(agent, env_config, device, num_partides=50):
+def evaluar_contra_random(agent, env_config, _device=None, num_partides=50):
     eval_env = TrucEnv(env_config)
     eval_opponent = RandomAgent(num_actions=len(ACTION_LIST))
     recompenses = []
@@ -38,6 +39,9 @@ def evaluar_contra_random(agent, env_config, device, num_partides=50):
         recompenses.append(recompensa)
         if recompensa > 0:
             victories += 1
+    del eval_env
+    gc.collect()
+    torch.cuda.empty_cache()
     return np.mean(recompenses), (victories / num_partides) * 100
 
 
@@ -57,4 +61,7 @@ def evaluar_contra_regles(agent, regles_agent, env_config, num_partides=100):
         recompenses.append(recompensa)
         if recompensa > 0:
             victories += 1
+    del eval_env
+    gc.collect()
+    torch.cuda.empty_cache()
     return np.mean(recompenses), (victories / num_partides) * 100

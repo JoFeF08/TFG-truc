@@ -282,9 +282,12 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow([update, global_step, pg_loss.item(), v_loss.item(), ent_loss.item(), mean_reward, eval_wr, eval_rev, eval_wr_regles])
                 
+        if update % 100 == 0:
+            torch.cuda.empty_cache()
+
         if update % 500 == 0:
             torch.save(net.state_dict(), save_dir / f"ppo_mlp_ma_update_{update}.pt")
-            
+
     # Finalització
     vec_env.close()
     
