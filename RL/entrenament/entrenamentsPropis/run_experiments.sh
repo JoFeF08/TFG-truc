@@ -42,33 +42,33 @@ run_and_time() {
     echo "${name}: ${duration} segons" >> "${BASE_DIR}/resum_temps.txt"
 }
 
-# Curriculum 
-run_and_time "mlp_fase1_mans" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp_ma.py" "$TIMESTEPS_MANS" "--mode finetune"
+# Curriculum
+run_and_time "mlp_fase1_mans" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp_ma.py" "$TIMESTEPS_MANS" "--mode frozen"
 
-# MLP Finetune
+# MLP Curriculum -> Joc Sencer (COS congelat per evitar forgetting)
 BEST_MLP_MA="${BASE_DIR}/mlp_fase1_mans/best.pt"
 if [ -f "$BEST_MLP_MA" ]; then
-    run_and_time "mlp_fase2_finetune" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" "$TIMESTEPS_FULL" "--mode finetune --load_model $BEST_MLP_MA"
+    run_and_time "mlp_fase2_frozen" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" "$TIMESTEPS_FULL" "--mode frozen --load_model $BEST_MLP_MA"
 else
     echo "ERROR: No s'ha trobat el model $BEST_MLP_MA. Saltant."
 fi
 
-# MLP Scratch
-run_and_time "mlp_baseline_scratch" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" "$TIMESTEPS_FULL" "--mode finetune"
+# MLP Baseline (sense curriculum, COS congelat)
+run_and_time "mlp_baseline_scratch" "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" "$TIMESTEPS_FULL" "--mode frozen"
 
 # GRU Curriculum
-run_and_time "gru_fase1_mans" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru_ma.py" "$TIMESTEPS_MANS" "--mode finetune"
+run_and_time "gru_fase1_mans" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru_ma.py" "$TIMESTEPS_MANS" "--mode frozen"
 
-# GRU Finetune
+# GRU Curriculum -> Joc Sencer (COS congelat per evitar forgetting)
 BEST_GRU_MA="${BASE_DIR}/gru_fase1_mans/best.pt"
 if [ -f "$BEST_GRU_MA" ]; then
-    run_and_time "gru_fase2_finetune" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" "$TIMESTEPS_FULL" "--mode finetune --load_model $BEST_GRU_MA"
+    run_and_time "gru_fase2_frozen" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" "$TIMESTEPS_FULL" "--mode frozen --load_model $BEST_GRU_MA"
 else
     echo "ERROR: No s'ha trobat el model $BEST_GRU_MA. Saltant."
 fi
 
-# GRU Scratch
-run_and_time "gru_baseline_scratch" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" "$TIMESTEPS_FULL" "--mode finetune"
+# GRU Baseline (sense curriculum, COS congelat)
+run_and_time "gru_baseline_scratch" "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" "$TIMESTEPS_FULL" "--mode frozen"
 
 
 echo "==================================================="
