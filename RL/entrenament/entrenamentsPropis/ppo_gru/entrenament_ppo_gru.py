@@ -34,19 +34,19 @@ from RL.entrenament.entrenamentsPropis.ppo_utils import extract_obs, evaluar_con
 # Hyperparams Constants
 NUM_ENVS = 48
 NUM_STEPS = 256
-MINIBATCH_ENVS = 12       # 8→12: gradients més estables en TBPTT
-UPDATE_EPOCHS = 5          # 7→5: menys epochs evita overfitting en xarxes recurrents
-TOTAL_TIMESTEPS = 20_000_000  # 60M→20M: primer test post-COS
-LR = 2e-4                  # 3e-4→2e-4: lleugerament menor per estabilitat GRU
+MINIBATCH_ENVS = 12
+UPDATE_EPOCHS = 5
+TOTAL_TIMESTEPS = 20_000_000
+LR = 2e-4
 GAMMA = 0.995
 GAE_LAMBDA = 0.95
 CLIP_COEF = 0.2
-ENT_COEF = 0.02            # 0.01→0.02: més exploració en joc de cartes amb moltes accions
+ENT_COEF = 0.02
 VF_COEF = 0.5
 
 # Fine-tune Constants
 FINETUNE_LR_COS = 1e-5
-UNFREEZE_FRACTION = 0.20   # 0.15→0.20: esperar més per descongelar COS
+UNFREEZE_FRACTION = 0.20
 
 
 def main():
@@ -104,8 +104,8 @@ def main():
     random_agent_train = RandomAgent(num_actions=n_acc)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.10)
-    n_envs_regles = int(NUM_ENVS * 0.40)
+    n_envs_random = int(NUM_ENVS * 0.05)
+    n_envs_regles = int(NUM_ENVS * 0.45)
     n_envs_pool   = int(NUM_ENVS * 0.15)
     POOL_FREQUENCY = 300
 

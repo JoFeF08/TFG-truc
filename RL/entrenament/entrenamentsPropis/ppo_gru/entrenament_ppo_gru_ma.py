@@ -38,7 +38,7 @@ MINIBATCH_ENVS = 12
 UPDATE_EPOCHS = 5
 TOTAL_TIMESTEPS = 20_000_000
 LR = 2e-4
-GAMMA = 0.99          # Episodis curts (una mà), gamma una mica menor
+GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_COEF = 0.2
 ENT_COEF = 0.02
@@ -107,8 +107,8 @@ def main():
     random_agent_train = RandomAgent(num_actions=n_acc)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.10)
-    n_envs_regles = int(NUM_ENVS * 0.40)
+    n_envs_random = int(NUM_ENVS * 0.05)
+    n_envs_regles = int(NUM_ENVS * 0.45)
     n_envs_pool   = int(NUM_ENVS * 0.15)
     POOL_FREQUENCY = 300
 
