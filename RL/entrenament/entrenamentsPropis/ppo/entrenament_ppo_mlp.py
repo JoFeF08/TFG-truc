@@ -101,8 +101,8 @@ def main():
     random_agent_train = RandomAgent(num_actions=n_accions)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.10)
-    n_envs_regles = int(NUM_ENVS * 0.40)
+    n_envs_random = int(NUM_ENVS * 0.05)
+    n_envs_regles = int(NUM_ENVS * 0.45)
     n_envs_pool   = int(NUM_ENVS * 0.15)
     POOL_FREQUENCY = 500
 
