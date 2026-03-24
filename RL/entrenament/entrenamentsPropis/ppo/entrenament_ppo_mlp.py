@@ -102,8 +102,8 @@ def main():
     print(f"[Regles/Random] Agents inicialitzats.")
 
     n_envs_random = int(NUM_ENVS * 0.10)
-    n_envs_regles = int(NUM_ENVS * 0.20)
-    n_envs_pool   = int(NUM_ENVS * 0.20)
+    n_envs_regles = int(NUM_ENVS * 0.40)
+    n_envs_pool   = int(NUM_ENVS * 0.15)
     POOL_FREQUENCY = 500
 
     fixed_opponents = {}

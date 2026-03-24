@@ -32,7 +32,7 @@ run_and_time() {
     # Assegurem que l'arrel del projecte es pot importar
     export PYTHONPATH="$(pwd):$PYTHONPATH"
     
-    python "$script_path" --total_timesteps "$timesteps" --save_dir "$out_dir" $extra_args
+    python3 "$script_path" --total_timesteps "$timesteps" --save_dir "$out_dir" $extra_args
     
     # Calculem la diferència de temps
     end_time=$(date +%s)
