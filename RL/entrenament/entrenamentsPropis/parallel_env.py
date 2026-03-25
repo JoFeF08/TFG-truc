@@ -112,7 +112,32 @@ class SubprocVecEnv:
         return self.reset_wait()
 
     def close(self):
+        # Enviar comanda de tancament a cada worker
         for remote in self.remotes:
-            remote.send(('close', None))
+            try:
+                remote.send(('close', None))
+            except (BrokenPipeError, OSError):
+                pass
+
+        # Esperar amb timeout, forçar kill si no responen
         for p in self.processes:
-            p.join()
+            p.join(timeout=5)
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=3)
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=2)
+
+        # Tancar pipes del costat pare
+        for remote in self.remotes:
+            try:
+                remote.close()
+            except OSError:
+                pass
+
+        self.processes.clear()
+
+    def __del__(self):
+        if self.processes:
+            self.close()
