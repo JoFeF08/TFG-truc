@@ -40,7 +40,8 @@ def worker(remote, parent_remote, env_config, seed):
                 
                 if done:
                     next_s, next_p_id = env.reset()
-                
+
+                env.action_recorder = []
                 remote.send(((next_s, next_p_id), ri, done))
                 
             elif cmd == 'reset':
