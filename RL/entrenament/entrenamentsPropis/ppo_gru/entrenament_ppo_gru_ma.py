@@ -1,6 +1,5 @@
 import sys
 import os
-import random
 import argparse
 from pathlib import Path
 import numpy as np
@@ -23,11 +22,9 @@ from RL.models.model_propi.ppo_gru.cap_ppo_gru import PPOGruNet
 from RL.models.model_propi.ppo_gru.agent_ppo_gru import PPOGruAgent
 from RL.entrenament.entrenamentsPropis.ppo_gru.buffers_ppo_gru import RolloutBufferGRU
 from rlcard.agents import RandomAgent
-from joc.entorn.env import TrucEnv          # Per avaluació (joc sencer)
 from RL.models.model_propi.agent_regles import AgentRegles
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo_nucleu
-from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
-from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
+from RL.models.model_propi.ppo.cap_ppo_mlp import SPLIT, OBS_CONTEXT_SIZE
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.entrenament.entrenamentsPropis.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
 
@@ -87,30 +84,13 @@ def main():
 
     agent = PPOGruAgent(net, n_acc, num_envs=NUM_ENVS, device=device)
 
-    pool_net = PPOGruNet(n_actions=n_acc, hidden_size=256, device=device)
-    pool_net.eval()
-    opponent_pool = []
-    pool_hidden_states = torch.zeros(1, NUM_ENVS, 256).to(device)
-
-    registres_dir = Path(__file__).parent / "registres"
-    if registres_dir.exists():
-        for run_dir in registres_dir.iterdir():
-            if run_dir.is_dir() and (run_dir.name.startswith("ppo_gru_") or run_dir.name.startswith("ppo_gru_ma_")):
-                best_path = run_dir / "best.pt"
-                if best_path.exists():
-                    opponent_pool.append(best_path)
-                    print(f"[Pool Init] Carregat: {run_dir.name} -> {best_path}")
-    print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
-
     regles_agent_eval = AgentRegles(num_actions=n_acc, seed=123)
     regles_agent_train = AgentRegles(num_actions=n_acc, seed=456)
     random_agent_train = RandomAgent(num_actions=n_acc)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.05)
-    n_envs_regles = int(NUM_ENVS * 0.45)
-    n_envs_pool   = int(NUM_ENVS * 0.15)
-    POOL_FREQUENCY = 300
+    n_envs_random = int(NUM_ENVS * 0.15)
+    n_envs_regles = int(NUM_ENVS * 0.60)
 
     fixed_opponents = {}
     current_idx = 0
@@ -119,9 +99,6 @@ def main():
     current_idx += n_envs_random
     for i in range(current_idx, current_idx + n_envs_regles):
         fixed_opponents[i] = {'type': 'regles', 'pid': i % 2}
-    current_idx += n_envs_regles
-    for i in range(current_idx, current_idx + n_envs_pool):
-        fixed_opponents[i] = {'type': 'pool', 'pid': i % 2}
 
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
 
@@ -155,16 +132,6 @@ def main():
         batch_rewards = []
         init_hidden = agent.hidden_states.clone()
 
-        if update > 10 and update % POOL_FREQUENCY == 0:
-            ckpt_path = save_dir / f"checkpoint_update_{update}.pt"
-            torch.save(net.state_dict(), ckpt_path)
-            opponent_pool.append(ckpt_path)
-
-            random_pool_path = random.choice(opponent_pool)
-            pool_net.load_state_dict(torch.load(random_pool_path, map_location=device, weights_only=True))
-            pool_net = pool_net.to(device)
-            print(f"\n[Pool] Oponent carregat: {random_pool_path.name}")
-
         for step in range(NUM_STEPS):
             global_step += NUM_ENVS
 
@@ -178,7 +145,6 @@ def main():
             indices_reset = [i for i, d in enumerate(last_dones) if d]
             if indices_reset:
                 agent.reset_hidden(indices_reset)
-                pool_hidden_states[:, indices_reset, :] = 0.0
 
             resets_tensor = torch.tensor(resets_step, dtype=torch.float32).to(device)
 
@@ -197,13 +163,6 @@ def main():
                     elif opp_info['type'] == 'regles':
                         action_idx, _ = regles_agent_train.eval_step(current_states[i])
                         action[i] = action_idx
-                        is_learning_step[i] = 0.0
-                    elif opp_info['type'] == 'pool' and len(opponent_pool) > 0:
-                        with torch.no_grad():
-                            p_logits, _, p_h = pool_net(obs_tensor[i:i+1], pool_hidden_states[:, i:i+1, :])
-                            p_action = torch.distributions.Categorical(logits=p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)).sample()
-                        action[i] = p_action
-                        pool_hidden_states[:, i:i+1, :] = p_h
                         is_learning_step[i] = 0.0
 
             actions_np = action.cpu().numpy()
@@ -306,8 +265,6 @@ def main():
 
     vec_env.close()
 
-    for f in save_dir.glob("checkpoint_update_*.pt"):
-        f.unlink()
     for f in save_dir.glob("ppo_gru_update_*.pt"):
         f.unlink()
     print(f"[Cleanup] Checkpoints intermedis eliminats. Nomes queda best.pt")

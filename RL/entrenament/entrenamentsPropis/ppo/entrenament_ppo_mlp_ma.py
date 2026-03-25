@@ -8,7 +8,6 @@ import torch.optim as optim
 import torch.nn as nn
 from tqdm import tqdm, trange
 import csv
-import random
 from datetime import datetime
 
 try:
@@ -85,30 +84,14 @@ def main():
         print(f"[Init] Model carregat correctament des de: {args.load_model}")
         
     agent = PPOMlpAgent(net, n_accions, device=device)
-    
-    # Pool d'Oponents
-    pool_net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
-    pool_net.eval()
-    opponent_pool = []
-
-    registres_dir = Path(__file__).parent / "registres"
-    if registres_dir.exists():
-        for run_dir in registres_dir.iterdir():
-            if run_dir.is_dir() and (run_dir.name.startswith("ppo_mlp_") or run_dir.name.startswith("ppo_mlp_ma_")):
-                best_path = run_dir / "best.pt"
-                if best_path.exists():
-                    opponent_pool.append(best_path)
-    print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
 
     regles_agent_eval = AgentRegles(num_actions=n_accions, seed=123)
     regles_agent_train = AgentRegles(num_actions=n_accions, seed=456)
     random_agent_train = RandomAgent(num_actions=n_accions)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.05)
-    n_envs_regles = int(NUM_ENVS * 0.45)
-    n_envs_pool   = int(NUM_ENVS * 0.15)
-    POOL_FREQUENCY = 500
+    n_envs_random = int(NUM_ENVS * 0.15)
+    n_envs_regles = int(NUM_ENVS * 0.60)
 
     fixed_opponents = {}
     current_idx = 0
@@ -117,9 +100,6 @@ def main():
     current_idx += n_envs_random
     for i in range(current_idx, current_idx + n_envs_regles):
         fixed_opponents[i] = {'type': 'regles', 'pid': i % 2}
-    current_idx += n_envs_regles
-    for i in range(current_idx, current_idx + n_envs_pool):
-        fixed_opponents[i] = {'type': 'pool', 'pid': i % 2}
     
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
     
@@ -151,16 +131,6 @@ def main():
     best_eval_wr = -1.0
     for update in pbar:
         batch_rewards = []
-        if update > 10 and update % POOL_FREQUENCY == 0:
-            ckpt_path = save_dir / f"checkpoint_update_{update}.pt"
-            torch.save(net.state_dict(), ckpt_path)
-            opponent_pool.append(ckpt_path)
-            
-            random_pool_path = random.choice(opponent_pool)
-            pool_net.load_state_dict(torch.load(random_pool_path, map_location=device, weights_only=True))
-            pool_net = pool_net.to(device)
-            print(f"\n[Pool] Oponent actualitzat a: {random_pool_path.name}")
-            
         for step in range(NUM_STEPS):
             global_step += NUM_ENVS
             
@@ -189,13 +159,6 @@ def main():
                     elif opp_info['type'] == 'regles':
                         action_idx, _ = regles_agent_train.eval_step(current_states[i])
                         action[i] = action_idx
-                        is_learning_step[i] = 0.0
-                    elif opp_info['type'] == 'pool' and len(opponent_pool) > 0:
-                        with torch.no_grad():
-                            p_logits, _ = pool_net(obs_tensor[i:i+1])
-                            p_logits = p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)
-                            p_action = torch.distributions.Categorical(logits=p_logits).sample()
-                        action[i] = p_action
                         is_learning_step[i] = 0.0
             
             actions_np = action.cpu().numpy()
@@ -291,9 +254,6 @@ def main():
     # Finalització
     vec_env.close()
     
-    # Netejar checkpoints intermedis, només queda best.pt i el log
-    for f in save_dir.glob("checkpoint_update_*.pt"):
-        f.unlink()
     for f in save_dir.glob("ppo_mlp_ma_update_*.pt"):
         f.unlink()
     print(f"[Cleanup] Checkpoints intermedis eliminats. Només queda best.pt")

@@ -1,6 +1,5 @@
 import sys
 import os
-import random
 import argparse
 from pathlib import Path
 import numpy as np
@@ -79,33 +78,14 @@ def main():
         print(f"[Init] Model carregat correctament des de: {args.load_model}")
 
     agent = PPOGruAgent(net, n_acc, num_envs=NUM_ENVS, device=device)
-    
-    # Pool d'Oponents
-    pool_net = PPOGruNet(n_actions=n_acc, hidden_size=256, device=device)
-    pool_net.eval()
-    opponent_pool = []
-    pool_hidden_states = torch.zeros(1, NUM_ENVS, 256).to(device)
-
-    # entrenamants anteriors
-    registres_dir = Path(__file__).parent / "registres"
-    if registres_dir.exists():
-        for run_dir in registres_dir.iterdir():
-            if run_dir.is_dir() and run_dir.name.startswith("ppo_gru_"):
-                best_path = run_dir / "best.pt"
-                if best_path.exists():
-                    opponent_pool.append(best_path)
-                    print(f"[Pool Init] Carregat: {run_dir.name} -> {best_path}")
-    print(f"[Pool Init] Total oponents carregats: {len(opponent_pool)}")
 
     regles_agent_eval = AgentRegles(num_actions=n_acc, seed=123)
     regles_agent_train = AgentRegles(num_actions=n_acc, seed=456)
     random_agent_train = RandomAgent(num_actions=n_acc)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.05)
-    n_envs_regles = int(NUM_ENVS * 0.45)
-    n_envs_pool   = int(NUM_ENVS * 0.15)
-    POOL_FREQUENCY = 300
+    n_envs_random = int(NUM_ENVS * 0.15)
+    n_envs_regles = int(NUM_ENVS * 0.60)
 
     fixed_opponents = {}
     current_idx = 0
@@ -114,9 +94,6 @@ def main():
     current_idx += n_envs_random
     for i in range(current_idx, current_idx + n_envs_regles):
         fixed_opponents[i] = {'type': 'regles', 'pid': i % 2}
-    current_idx += n_envs_regles
-    for i in range(current_idx, current_idx + n_envs_pool):
-        fixed_opponents[i] = {'type': 'pool', 'pid': i % 2}
     
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
     
@@ -148,18 +125,6 @@ def main():
     for update in pbar:
         batch_rewards = []
         init_hidden = agent.hidden_states.clone()
-        
-        # afegim a la pool
-        if update > 10 and update % POOL_FREQUENCY == 0:
-            ckpt_path = save_dir / f"checkpoint_update_{update}.pt"
-            torch.save(net.state_dict(), ckpt_path)
-            opponent_pool.append(ckpt_path)
-            
-            random_pool_path = random.choice(opponent_pool)
-            pool_net.load_state_dict(torch.load(random_pool_path, map_location=device, weights_only=True))
-            pool_net = pool_net.to(device)  # Assegurar que està en GPU
-            print(f"\n[Pool] Oponent carregat: {random_pool_path.name}")
-        
         for step in range(NUM_STEPS):
             global_step += NUM_ENVS
             
@@ -178,9 +143,7 @@ def main():
                     indices_reset.append(i)
                     
             if len(indices_reset) > 0:
-                
                 agent.reset_hidden(indices_reset)
-                pool_hidden_states[:, indices_reset, :] = 0.0
                 
             resets_tensor = torch.tensor(resets_step, dtype=torch.float32).to(device)
             
@@ -200,13 +163,6 @@ def main():
                     elif opp_info['type'] == 'regles':
                         action_idx, _ = regles_agent_train.eval_step(current_states[i])
                         action[i] = action_idx
-                        is_learning_step[i] = 0.0
-                    elif opp_info['type'] == 'pool' and len(opponent_pool) > 0:
-                        with torch.no_grad():
-                            p_logits, _, p_h = pool_net(obs_tensor[i:i+1], pool_hidden_states[:, i:i+1, :])
-                            p_action = torch.distributions.Categorical(logits=p_logits.masked_fill(~masks_tensor[i:i+1], -1e9)).sample()
-                        action[i] = p_action
-                        pool_hidden_states[:, i:i+1, :] = p_h
                         is_learning_step[i] = 0.0
             
             actions_np = action.cpu().numpy()
@@ -315,9 +271,6 @@ def main():
             
     vec_env.close()
 
-    # Netejar checkpoints intermedis, només queda best.pt i el log
-    for f in save_dir.glob("checkpoint_update_*.pt"):
-        f.unlink()
     for f in save_dir.glob("ppo_gru_update_*.pt"):
         f.unlink()
     print(f"[Cleanup] Checkpoints intermedis eliminats. Només queda best.pt")
