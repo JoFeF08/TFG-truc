@@ -84,8 +84,8 @@ def main():
     random_agent_train = RandomAgent(num_actions=n_acc)
     print(f"[Regles/Random] Agents inicialitzats.")
 
-    n_envs_random = int(NUM_ENVS * 0.15)
-    n_envs_regles = int(NUM_ENVS * 0.60)
+    n_envs_random = int(NUM_ENVS * 0.05)
+    n_envs_regles = int(NUM_ENVS * 0.65)
 
     fixed_opponents = {}
     current_idx = 0

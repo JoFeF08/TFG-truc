@@ -93,6 +93,14 @@ class AgentRegles:
         equip = raw['id_jugador'] % 2
         return raw['puntuacio'][equip] - raw['puntuacio'][1 - equip]
 
+    def _score_context(self, raw):
+        """Retorna (per_guanyar_propi, per_guanyar_rival) en punts."""
+        equip = raw['id_jugador'] % 2
+        pf = raw.get('puntuacio_final', 24)
+        per_propi = max(1, pf - raw['puntuacio'][equip])
+        per_rival  = max(1, pf - raw['puntuacio'][1 - equip])
+        return per_propi, per_rival
+
     def _fallback(self, legal):
         if PASSAR in legal:
             return PASSAR
@@ -104,10 +112,38 @@ class AgentRegles:
     # respondre envit
     def _respondre_envit(self, raw, legal):
         es = self._envit_score(raw)
+        per_propi, per_rival = self._score_context(raw)
 
-        if es >= 30 and APOSTAR_ENVIT in legal:
+        # % que representa l'envit dels punts que li falten a cada equip
+        perill_rival = es / per_rival   # > 1: rival guanya el joc si guanya l'envit
+        necessitat   = es / per_propi   # > 1: nosaltres guanyem si guanyem l'envit
+
+        llindar_puja    = 30
+        llindar_accepta = 25
+
+        # Rival a punt de guanyar -> ser conservadors (no regalar punts)
+        if perill_rival >= 1.0:
+            llindar_puja    += 8
+            llindar_accepta += 8
+        elif perill_rival >= 0.6:
+            llindar_puja    += 4
+            llindar_accepta += 4
+
+        # Nosaltres a punt de guanyar -> ser agressius
+        if necessitat >= 1.0:
+            llindar_puja    -= 10
+            llindar_accepta -= 10
+        elif necessitat >= 0.6:
+            llindar_puja    -= 5
+            llindar_accepta -= 5
+
+        # Soroll estocàstic (±2)
+        llindar_puja    += self.rng.randint(-2, 2)
+        llindar_accepta += self.rng.randint(-2, 2)
+
+        if es >= llindar_puja and APOSTAR_ENVIT in legal:
             return APOSTAR_ENVIT
-        if es >= 25 and VULL_ENVIT in legal:
+        if es >= llindar_accepta and VULL_ENVIT in legal:
             return VULL_ENVIT
         if FORA_ENVIT in legal:
             return FORA_ENVIT
@@ -120,17 +156,43 @@ class AgentRegles:
         best = self._best_force(raw)
         n_cartes = len(self._hand(raw))
         truc_level = raw['estat_truc']['level']
+        per_propi, per_rival = self._score_context(raw)
 
-        # Penalitzacio per nivells alts
-        extra = max(0, (truc_level - 3)) // 3  # 0 per level<=3, 1 per 6, 2 per 9+
+        punts_en_joc = truc_level
+        perill_rival = punts_en_joc / per_rival   # % dels punts rival que representa el truc
+        necessitat   = punts_en_joc / per_propi   # % dels nostres punts necessaris
+
+        # Quantes pujades han passat (0=truc inicial, 1=retruc, 2=vale9...)
+        n_pujades = max(0, (truc_level - 3) // 3)
+
+        # Ajust de força: negatiu = acceptem amb menys força; positiu = exigim més
+        ajust_forca = 0
+
+        # Cada pujada de l'oponent senyala força -> exigim més mà per acceptar
+        ajust_forca += n_pujades * 10
+
+        if perill_rival >= 1.0:
+            # Foldant els donem la victòria igualment -> lluitar val la pena
+            ajust_forca -= 10
+        elif perill_rival >= 0.6:
+            # Truc molt perillós per al nostre marcador -> més conservadors
+            ajust_forca += 10
+
+        if necessitat >= 1.0:
+            # Guanyar el truc ens dona la victòria -> molt agressius
+            ajust_forca -= 20
+        elif necessitat >= 0.6:
+            ajust_forca -= 10
+
+        # Soroll estocàstic (±5)
+        ajust_forca += self.rng.randint(-5, 5)
 
         # Ja hem guanyat 1 ronda
         if guanyades >= 1:
             if best >= 97 and APOSTAR_TRUC in legal:
                 return APOSTAR_TRUC
-            if best >= 70 - extra * 15 and VULL_TRUC in legal:
+            if best >= 70 + ajust_forca and VULL_TRUC in legal:
                 return VULL_TRUC
-            # Acceptar arriscat amb un poc d'aleatorietat
             if self.rng.random() < 0.20 and VULL_TRUC in legal:
                 return VULL_TRUC
             if FORA_TRUC in legal:
@@ -144,7 +206,6 @@ class AgentRegles:
                 return VULL_TRUC
             if n_top == 1 and best >= 97 and VULL_TRUC in legal:
                 return VULL_TRUC
-            # Acceptar arriscat
             if n_top == 1 and self.rng.random() < 0.20 and VULL_TRUC in legal:
                 return VULL_TRUC
             if FORA_TRUC in legal:
@@ -152,7 +213,9 @@ class AgentRegles:
 
         # Ja hem perdut 1 ronda -> necessitem guanyar les 2 restants
         if perdudes >= 1:
-            if n_top >= 2 and n_cartes >= 2 and VULL_TRUC in legal:
+            # Si estem desesperats (necessitat alta), abaixem requisit de top cards
+            n_top_needed = 1 if necessitat >= 0.5 else 2
+            if n_top >= n_top_needed and n_cartes >= 2 and VULL_TRUC in legal:
                 return VULL_TRUC
             if FORA_TRUC in legal:
                 return FORA_TRUC
@@ -169,12 +232,16 @@ class AgentRegles:
             es = self._envit_score(raw)
             envit_level = raw['estat_envit']['level']
             if envit_level == 0:
-                if es >= 28:
+                # Llindars variables per fer-lo menys predictible
+                llindar_alt = self.rng.randint(28, 30)
+                llindar_baix = self.rng.randint(24, 26)
+
+                if es >= llindar_alt:
                     return APOSTAR_ENVIT
-                if es >= 24 and self._som_ma(raw) and self.rng.random() < 0.50:
+                if es >= llindar_baix and self._som_ma(raw) and self.rng.random() < 0.50:
                     return APOSTAR_ENVIT
                 # Zona grisa: aleatorietat
-                if 24 <= es < 28 and self.rng.random() < 0.35:
+                if llindar_baix <= es < llindar_alt and self.rng.random() < 0.35:
                     return APOSTAR_ENVIT
 
         # Considerar truc
@@ -191,7 +258,6 @@ class AgentRegles:
         n_top = self._n_top(raw)
         n_cartes = len(self._hand(raw))
         rival_visible = self._rival_carta_taula(raw) is not None
-        truc_level = raw['estat_truc']['level']
         avantatge = self._avantatge_puntuacio(raw)
 
         if avantatge > 6:
