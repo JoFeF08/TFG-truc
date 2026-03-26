@@ -200,7 +200,7 @@ class AgentRegles:
 
         # Ronda 0 (cap ronda jugada)
         if guanyades == 0 and perdudes == 0:
-            if n_top >= 2 + extra and APOSTAR_TRUC in legal:
+            if n_top >= 2 and APOSTAR_TRUC in legal:
                 return APOSTAR_TRUC
             if n_top >= 2 and VULL_TRUC in legal:
                 return VULL_TRUC
