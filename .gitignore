@@ -95,3 +95,8 @@ best_p0.pt
 joc/entorn/env_backup.py
 joc/entorn/game_backup.py
 best.pt
+
+
+experiments_comparativa_*
+.claude
+.mcp.json
