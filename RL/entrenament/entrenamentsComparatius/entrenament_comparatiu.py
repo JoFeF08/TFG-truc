@@ -5,6 +5,9 @@ import csv
 import time
 import logging
 import types
+import contextlib
+import io
+import shutil
 from pathlib import Path
 from datetime import datetime
 from copy import deepcopy
@@ -336,6 +339,10 @@ def run_dqn(save_dir, total_timesteps, device):
     t0 = time.time()
     last_loss = None
 
+    # Transició pendent de p0 per a cada env (persistent entre steps)
+    # Quan el joc acaba en torn de l'oponent, la completem amb la recompensa terminal.
+    last_p0_sa = [None] * NUM_ENVS   # (flat_obs, action) de la darrera vegada que p0 va actuar
+
     pbar = trange(1, num_updates + 1, desc='DQN')
     for update in pbar:
         for step in range(NUM_STEPS):
@@ -349,7 +356,7 @@ def run_dqn(save_dir, total_timesteps, device):
                 s = current_states[i]
                 active_pid = s['raw_obs']['id_jugador']
                 opp = opp_map[i]
-                learner_pid = 1 - opp['pid']  # learner és l'altre jugador
+                learner_pid = 1 - opp['pid']
 
                 if active_pid == learner_pid:
                     flat = make_flat_state(s)
@@ -357,7 +364,6 @@ def run_dqn(save_dir, total_timesteps, device):
                     actions[i] = dqn.step(flat)
                     is_learning[i] = True
                 else:
-                    # Oponent fix actua
                     if opp['type'] == 'random':
                         actions[i], _ = rand_opp.eval_step(s)
                     elif opp['type'] == 'regles':
@@ -368,20 +374,27 @@ def run_dqn(save_dir, total_timesteps, device):
 
             next_states_players, rewards_list, dones_list = vec_env.step(actions)
 
+            devnull = io.StringIO()
             for i in range(NUM_ENVS):
-                if dones_list[i]:
+                opp = opp_map[i]
+                learner_pid = 1 - opp['pid']
+                flat_next = make_flat_state(next_states_players[i][0])
+                reward_p0 = rewards_list[i][learner_pid]
+                done = dones_list[i]
+
+                if done:
                     games_played += 1
+                    # Joc acabat en torn de l'oponent → completar la transició pendent de p0
+                    if not is_learning[i] and last_p0_sa[i] is not None:
+                        prev_obs, prev_act = last_p0_sa[i]
+                        with contextlib.redirect_stdout(devnull):
+                            dqn.feed((prev_obs, prev_act, reward_p0, flat_next, True))
+                    last_p0_sa[i] = None
 
                 if is_learning[i]:
-                    opp = opp_map[i]
-                    learner_pid = 1 - opp['pid']
-                    reward = rewards_list[i][learner_pid]
-                    next_s = next_states_players[i][0]
-                    flat_next = make_flat_state(next_s)
-                    ts = (prev_flat[i], actions[i], reward, flat_next, dones_list[i])
-                    import contextlib, io
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        dqn.feed(ts)
+                    with contextlib.redirect_stdout(devnull):
+                        dqn.feed((prev_flat[i], actions[i], reward_p0, flat_next, done))
+                    last_p0_sa[i] = None if done else (prev_flat[i], actions[i])
 
             current_states = [sp[0] for sp in next_states_players]
 
@@ -410,7 +423,6 @@ def run_dqn(save_dir, total_timesteps, device):
 
     vec_env.close()
     # Guardar model
-    import shutil
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
@@ -462,7 +474,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     results = vec_env.reset_all()
     current_states = [r[0] for r in results]
 
-    # Inicialitzar
+    # Inicialitzar polítiques
     p0.sample_episode_policy()
     p1.sample_episode_policy()
 
@@ -472,6 +484,11 @@ def run_nfsp(save_dir, total_timesteps, device):
     best_metric = -1.0
     t0 = time.time()
     wr_g = 0.0
+
+    # Transicions pendents (persistent entre steps) per capturar recompenses terminals
+    # quan el joc acaba en el torn de l'oponent.
+    last_p0_sa = [None] * NUM_ENVS   # (flat_obs, action) de la darrera acció de p0
+    last_p1_sa = [None] * NUM_ENVS   # ídem per p1 (selfplay envs)
 
     pbar = trange(1, num_updates + 1, desc='NFSP')
     for update in pbar:
@@ -488,7 +505,7 @@ def run_nfsp(save_dir, total_timesteps, device):
                 s = current_states[i]
                 active_pid = s['raw_obs']['id_jugador']
                 opp = opp_map[i]
-                learner_pid = 1 - opp['pid']  # p0 és el learner
+                learner_pid = 1 - opp['pid']
 
                 if opp['type'] == 'selfplay':
                     if active_pid == learner_pid:
@@ -502,7 +519,6 @@ def run_nfsp(save_dir, total_timesteps, device):
                         actions[i] = p1.step(flat)
                         step_for_p1[i] = True
                 else:
-                    # Oponent fix
                     if active_pid == learner_pid:
                         flat = make_flat_state(s)
                         prev_flat_p0[i] = flat
@@ -516,34 +532,44 @@ def run_nfsp(save_dir, total_timesteps, device):
 
             next_states_players, rewards_list, dones_list = vec_env.step(actions)
 
-            import contextlib, io
             devnull = io.StringIO()
-
             for i in range(NUM_ENVS):
-                if dones_list[i]:
-                    games_played += 1
-                    # Re-sample policy
-                    p0.sample_episode_policy()
-                    if opp_map[i]['type'] == 'selfplay':
-                        p1.sample_episode_policy()
-
                 opp = opp_map[i]
                 learner_pid = 1 - opp['pid']
-                next_s = next_states_players[i][0]
-                flat_next = make_flat_state(next_s)
+                opp_pid     = opp['pid']
+                flat_next   = make_flat_state(next_states_players[i][0])
+                reward_p0   = rewards_list[i][learner_pid]
+                reward_p1   = rewards_list[i][opp_pid]
+                done        = dones_list[i]
+
+                if done:
+                    games_played += 1
+                    # Completar transició pendent de p0 si el joc va acabar en torn de l'oponent
+                    if not step_for_p0[i] and last_p0_sa[i] is not None:
+                        prev_obs, prev_act = last_p0_sa[i]
+                        with contextlib.redirect_stdout(devnull):
+                            p0.feed((prev_obs, prev_act, reward_p0, flat_next, True))
+                    last_p0_sa[i] = None
+                    # Ídem per p1 (selfplay)
+                    if opp['type'] == 'selfplay' and not step_for_p1[i] and last_p1_sa[i] is not None:
+                        prev_obs, prev_act = last_p1_sa[i]
+                        with contextlib.redirect_stdout(devnull):
+                            p1.feed((prev_obs, prev_act, reward_p1, flat_next, True))
+                    last_p1_sa[i] = None
+                    # Resample política NFSP per al nou episodi
+                    p0.sample_episode_policy()
+                    if opp['type'] == 'selfplay':
+                        p1.sample_episode_policy()
 
                 if step_for_p0[i]:
-                    reward = rewards_list[i][learner_pid]
-                    ts = (prev_flat_p0[i], actions[i], reward, flat_next, dones_list[i])
                     with contextlib.redirect_stdout(devnull):
-                        p0.feed(ts)
+                        p0.feed((prev_flat_p0[i], actions[i], reward_p0, flat_next, done))
+                    last_p0_sa[i] = None if done else (prev_flat_p0[i], actions[i])
 
                 if step_for_p1[i]:
-                    opp_pid = opp['pid']
-                    reward = rewards_list[i][opp_pid]
-                    ts = (prev_flat_p1[i], actions[i], reward, flat_next, dones_list[i])
                     with contextlib.redirect_stdout(devnull):
-                        p1.feed(ts)
+                        p1.feed((prev_flat_p1[i], actions[i], reward_p1, flat_next, done))
+                    last_p1_sa[i] = None if done else (prev_flat_p1[i], actions[i])
 
             current_states = [sp[0] for sp in next_states_players]
 
@@ -565,7 +591,6 @@ def run_nfsp(save_dir, total_timesteps, device):
         pbar.set_postfix({'step': global_step, 'WR_g': f'{wr_g:.1f}%'})
 
     vec_env.close()
-    import shutil
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
@@ -735,7 +760,6 @@ def run_ppo(save_dir, total_timesteps, device):
             torch.cuda.empty_cache()
 
     vec_env.close()
-    import shutil
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
