@@ -52,15 +52,17 @@ def main():
     parser.add_argument("--total_timesteps", type=int, default=TOTAL_TIMESTEPS)
     parser.add_argument("--load_model", type=str, default=None, help="Ruta al model .pt a carregar")
     parser.add_argument("--save_dir", type=str, default=None, help="Directori on guardar els resultats")
+    parser.add_argument("--cos_weights", type=str, default=None, help="Ruta als pesos SL del cos. 'none' per COS aleatori.")
+    parser.add_argument("--unfreeze_fraction", type=float, default=UNFREEZE_FRACTION, help="Fracció del training abans de descongelar el cos (finetune)")
     args = parser.parse_args()
-    
+
     total_timesteps = args.total_timesteps
-    unfreeze_step = int(total_timesteps * UNFREEZE_FRACTION)
+    unfreeze_step = int(total_timesteps * args.unfreeze_fraction)
     has_unfrozen = False
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"[{device.type.upper()}] Iniciant Entrenament PPO Base MANS (MLP) - Mode: {args.mode.upper()}")
-    
+
     env_config_ma = {
         'num_jugadors': 2,
         'cartes_jugador': 3,
@@ -77,7 +79,8 @@ def main():
     vec_env = SubprocVecEnvMa(NUM_ENVS, env_config_ma)
     
     n_accions = len(ACTION_LIST)
-    net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+    cos_w = None if args.cos_weights == "none" else args.cos_weights
+    net = PPOMlpNet(n_actions=n_accions, hidden_size=256, ruta_weights=cos_w, device=device)
     
     if args.load_model and os.path.exists(args.load_model):
         net.load_state_dict(torch.load(args.load_model, map_location=device, weights_only=True))

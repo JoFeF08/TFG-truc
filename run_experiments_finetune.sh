@@ -1,8 +1,12 @@
 #!/bin/bash
 # Experiments fase2 amb FINETUNE complet (cos + GRU descongelats)
 # Carrega els millors models fase1 dels dos runs anteriors (1246h i 2317h)
+#
+# UNFREEZE_FRACTION=0.15/0.20 → col·lapse (política inestable quan es descongela)
+# UNFREEZE_FRACTION=0.60      → descongelar quan la política ja és robusta
 
 TIMESTEPS_FULL=24000000
+UNFREEZE_FRACTION=0.60
 
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
 BASE_DIR="experiments_finetune_${TIMESTAMP}"
@@ -50,7 +54,7 @@ if [ -f "$MLP_FASE1_RUN1" ]; then
     run_and_time "mlp_fase2_finetune_run1" \
         "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" \
         "$TIMESTEPS_FULL" \
-        "--mode finetune --load_model $MLP_FASE1_RUN1"
+        "--mode finetune --unfreeze_fraction $UNFREEZE_FRACTION --load_model $MLP_FASE1_RUN1"
 else
     echo "ERROR: No s'ha trobat $MLP_FASE1_RUN1. Saltant."
 fi
@@ -59,7 +63,7 @@ if [ -f "$MLP_FASE1_RUN2" ]; then
     run_and_time "mlp_fase2_finetune_run2" \
         "RL/entrenament/entrenamentsPropis/ppo/entrenament_ppo_mlp.py" \
         "$TIMESTEPS_FULL" \
-        "--mode finetune --load_model $MLP_FASE1_RUN2"
+        "--mode finetune --unfreeze_fraction $UNFREEZE_FRACTION --load_model $MLP_FASE1_RUN2"
 else
     echo "ERROR: No s'ha trobat $MLP_FASE1_RUN2. Saltant."
 fi
@@ -69,7 +73,7 @@ if [ -f "$GRU_FASE1_RUN1" ]; then
     run_and_time "gru_fase2_finetune_run1" \
         "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" \
         "$TIMESTEPS_FULL" \
-        "--mode finetune --load_model $GRU_FASE1_RUN1"
+        "--mode finetune --unfreeze_fraction $UNFREEZE_FRACTION --load_model $GRU_FASE1_RUN1"
 else
     echo "ERROR: No s'ha trobat $GRU_FASE1_RUN1. Saltant."
 fi
@@ -78,7 +82,7 @@ if [ -f "$GRU_FASE1_RUN2" ]; then
     run_and_time "gru_fase2_finetune_run2" \
         "RL/entrenament/entrenamentsPropis/ppo_gru/entrenament_ppo_gru.py" \
         "$TIMESTEPS_FULL" \
-        "--mode finetune --load_model $GRU_FASE1_RUN2"
+        "--mode finetune --unfreeze_fraction $UNFREEZE_FRACTION --load_model $GRU_FASE1_RUN2"
 else
     echo "ERROR: No s'ha trobat $GRU_FASE1_RUN2. Saltant."
 fi

@@ -52,10 +52,11 @@ def main():
     parser.add_argument("--total_timesteps", type=int, default=TOTAL_TIMESTEPS)
     parser.add_argument("--load_model", type=str, default=None, help="Ruta al model .pt a carregar")
     parser.add_argument("--save_dir", type=str, default=None, help="Directori on guardar els resultats")
+    parser.add_argument("--unfreeze_fraction", type=float, default=UNFREEZE_FRACTION, help="Fracció del training abans de descongelar el cos (finetune)")
     args = parser.parse_args()
-    
+
     total_timesteps = args.total_timesteps
-    unfreeze_step = int(total_timesteps * UNFREEZE_FRACTION)
+    unfreeze_step = int(total_timesteps * args.unfreeze_fraction)
     has_unfrozen = False
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
