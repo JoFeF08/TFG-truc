@@ -100,3 +100,4 @@ best.pt
 experiments_comparativa_*
 .claude
 .mcp.json
+*.png
