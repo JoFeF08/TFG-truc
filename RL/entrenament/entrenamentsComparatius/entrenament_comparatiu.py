@@ -299,6 +299,8 @@ def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
     num_envs = num_envs_override or NUM_ENVS_DQN
     eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
+    memory_size = min(DQN_MEMORY, 500_000) if num_envs <= 4 else DQN_MEMORY
+    warmup = min(DQN_WARMUP, memory_size // 10)
 
     dqn = DQNAgent(
         num_actions=N_ACTIONS,
@@ -306,8 +308,8 @@ def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
         mlp_layers=HIDDEN_LAYERS,
         learning_rate=DQN_LR,
         batch_size=DQN_BATCH,
-        replay_memory_size=DQN_MEMORY,
-        replay_memory_init_size=DQN_WARMUP,
+        replay_memory_size=memory_size,
+        replay_memory_init_size=warmup,
         update_target_estimator_every=DQN_UPDATE_TGT,
         epsilon_decay_steps=eps_decay,
         epsilon_end=DQN_EPS_MIN,
@@ -451,6 +453,9 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
     num_envs = num_envs_override or NUM_ENVS_NFSP
     eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
+    q_memory = min(NFSP_Q_REPLAY, 500_000) if num_envs <= 4 else NFSP_Q_REPLAY
+    reservoir = min(NFSP_RESERVOIR, 500_000) if num_envs <= 4 else NFSP_RESERVOIR
+    warmup = min(NFSP_WARMUP, q_memory // 10)
 
     def make_nfsp():
         return NFSPAgent(
@@ -461,13 +466,13 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
             rl_learning_rate=NFSP_RL_LR,
             sl_learning_rate=NFSP_SL_LR,
             batch_size=NFSP_BATCH,
-            reservoir_buffer_capacity=NFSP_RESERVOIR,
-            q_replay_memory_size=NFSP_Q_REPLAY,
+            reservoir_buffer_capacity=reservoir,
+            q_replay_memory_size=q_memory,
             q_update_target_estimator_every=NFSP_Q_UPDATE,
             anticipatory_param=NFSP_ETA,
             q_epsilon_decay_steps=eps_decay,
             q_epsilon_end=NFSP_EPS_MIN,
-            q_replay_memory_init_size=NFSP_WARMUP,
+            q_replay_memory_init_size=warmup,
             q_batch_size=NFSP_BATCH,
             q_train_every=NFSP_Q_TRAIN_EVERY,
             device=device,

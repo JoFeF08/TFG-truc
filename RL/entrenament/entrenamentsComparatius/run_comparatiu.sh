@@ -48,7 +48,8 @@ run_and_time() {
     echo ">> [$AGENT] completat en ${HORES}h ${MINUTS}m ${SEGONS}s"
     echo "${AGENT}: ${DURATION}s (${HORES}h ${MINUTS}m ${SEGONS}s)" >> "$RESUM"
 
-    sleep 15
+    pkill -f "entrenament_comparatiu" 2>/dev/null || true
+    sleep 5
 }
 
 # ===================== FASE 1: PARAL·LEL =====================
