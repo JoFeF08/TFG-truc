@@ -8,18 +8,24 @@
 #   bash run_comparatiu.sh --timesteps 6000000    # per proves ràpides
 
 TIMESTEPS=24000000
+NUM_ENVS=""
 SCRIPT="RL/entrenament/entrenamentsComparatius/entrenament_comparatiu.py"
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
-BASE_DIR="resultats_comparativa_${TIMESTAMP}"
 
-# Opcions de línia de comandes
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --timesteps) TIMESTEPS="$2"; shift ;;
+        --num_envs) NUM_ENVS="$2"; shift ;;
         *) echo "Opció desconeguda: $1"; exit 1 ;;
     esac
     shift
 done
+
+if [ -n "$NUM_ENVS" ]; then
+    BASE_DIR="resultats_comparativa_${NUM_ENVS}env_${TIMESTAMP}"
+else
+    BASE_DIR="resultats_comparativa_${TIMESTAMP}"
+fi
 
 mkdir -p "$BASE_DIR"
 RESUM="${BASE_DIR}/resum_temps.txt"
@@ -42,7 +48,8 @@ run_and_time() {
     python3 "$SCRIPT" \
         --agent "$AGENT" \
         --total_timesteps "$TIMESTEPS" \
-        --save_dir "$OUT_DIR"
+        --save_dir "$OUT_DIR" \
+        ${NUM_ENVS:+--num_envs $NUM_ENVS}
 
     END=$(date +%s)
     DURATION=$((END - START))

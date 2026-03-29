@@ -290,13 +290,14 @@ Tots tres algorismes amb condicions idèntiques:
 """
 
 # DQN
-def run_dqn(save_dir, total_timesteps, device):
+def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = NUM_ENVS_DQN
+    num_envs = num_envs_override or NUM_ENVS_DQN
+    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
 
     dqn = DQNAgent(
@@ -417,7 +418,7 @@ def run_dqn(save_dir, total_timesteps, device):
                         tp.data.lerp_(p.data, DQN_POLYAK_TAU)
 
         # Avaluació
-        if global_step % EVAL_EVERY_STEPS < (num_envs * NUM_STEPS):
+        if global_step % eval_every < (num_envs * NUM_STEPS):
             wr_r, wr_g, metric = evaluar_agent(dqn, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, last_loss, wr_r, wr_g, metric, elapsed)
@@ -441,13 +442,14 @@ def run_dqn(save_dir, total_timesteps, device):
 
 
 # NFSP
-def run_nfsp(save_dir, total_timesteps, device):
+def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = NUM_ENVS_NFSP
+    num_envs = num_envs_override or NUM_ENVS_NFSP
+    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
 
     def make_nfsp():
@@ -583,7 +585,7 @@ def run_nfsp(save_dir, total_timesteps, device):
             current_states = [sp[0] for sp in next_states_players]
 
         # Avaluació
-        if global_step % EVAL_EVERY_STEPS < (num_envs * NUM_STEPS):
+        if global_step % eval_every < (num_envs * NUM_STEPS):
             wr_r, wr_g, metric = evaluar_agent(p0, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, None, wr_r, wr_g, metric, elapsed)
@@ -627,13 +629,15 @@ def _extract_obs_ppo(states_list):
 
 
 # PPO
-def run_ppo(save_dir, total_timesteps, device):
+def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = NUM_ENVS_PPO
+    num_envs = num_envs_override or NUM_ENVS_PPO
+    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    ppo_minibatch = min(PPO_MINIBATCH, num_envs * NUM_STEPS)
     net   = SimpleActorCritic(OBS_DIM, N_ACTIONS, HIDDEN_SIZE).to(device)
     agent = SimpleActorCriticAgent(net, N_ACTIONS, device)
 
@@ -729,8 +733,8 @@ def run_ppo(save_dir, total_timesteps, device):
         net.train()
         for _ in range(PPO_EPOCHS):
             np.random.shuffle(b_inds)
-            for start in range(0, num_envs * NUM_STEPS, PPO_MINIBATCH):
-                mb = b_inds[start:start + PPO_MINIBATCH]
+            for start in range(0, num_envs * NUM_STEPS, ppo_minibatch):
+                mb = b_inds[start:start + ppo_minibatch]
                 loss, pg_loss, v_loss, ent_loss = calcular_perdua_ppo(
                     agent, b_obs[mb], b_act[mb], b_lp[mb],
                     b_adv[mb], b_ret[mb], b_masks[mb],
@@ -748,7 +752,7 @@ def run_ppo(save_dir, total_timesteps, device):
         last_loss    = pg_loss_val
 
         # Avaluació
-        if global_step % EVAL_EVERY_STEPS < (num_envs * NUM_STEPS):
+        if global_step % eval_every < (num_envs * NUM_STEPS):
             wr_r, wr_g, metric = evaluar_agent(agent, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, pg_loss_val,
@@ -783,6 +787,7 @@ def main():
     parser = argparse.ArgumentParser(description='Entrenament Comparatiu DQN/NFSP/PPO')
     parser.add_argument('--agent', choices=['dqn', 'nfsp', 'ppo'], required=True)
     parser.add_argument('--total_timesteps', type=int, default=TOTAL_TIMESTEPS)
+    parser.add_argument('--num_envs', type=int, default=None)
     parser.add_argument('--save_dir', type=str, default=None)
     args = parser.parse_args()
 
@@ -806,11 +811,11 @@ def main():
 
     t_start = time.time()
     if args.agent == 'dqn':
-        run_dqn(save_dir, args.total_timesteps, device)
+        run_dqn(save_dir, args.total_timesteps, device, args.num_envs)
     elif args.agent == 'nfsp':
-        run_nfsp(save_dir, args.total_timesteps, device)
+        run_nfsp(save_dir, args.total_timesteps, device, args.num_envs)
     elif args.agent == 'ppo':
-        run_ppo(save_dir, args.total_timesteps, device)
+        run_ppo(save_dir, args.total_timesteps, device, args.num_envs)
 
     total_time = time.time() - t_start
     print(f'\nTemps total: {total_time:.0f}s ({total_time/3600:.2f}h)')
