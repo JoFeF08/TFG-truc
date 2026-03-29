@@ -76,25 +76,28 @@ PPO_EPOCHS      = 7
 PPO_MINIBATCH   = 1024
 
 # Hiperparàmetres DQN
-DQN_LR          = 1e-4
-DQN_BATCH       = 256
-DQN_MEMORY      = 200_000
-DQN_TRAIN_EVERY = 32
-DQN_UPDATE_TGT  = 1000
-DQN_EPS_MIN     = 0.05
-DQN_POLYAK_TAU  = 0.05
-DQN_POLYAK_FREQ = 5_000   # steps entre actualitzacions Polyak
+DQN_LR           = 1e-4
+DQN_BATCH        = 512
+DQN_MEMORY       = 1_000_000
+DQN_WARMUP       = 5_000
+DQN_TRAIN_EVERY  = 64
+DQN_UPDATE_TGT   = 2_000
+DQN_EPS_MIN      = 0.05
+DQN_POLYAK_TAU   = 0.05
+DQN_POLYAK_FREQ  = 5_000
 
 # Hiperparàmetres NFSP
-NFSP_RL_LR      = 1e-4
-NFSP_SL_LR      = 1e-4
-NFSP_BATCH      = 256
-NFSP_RESERVOIR  = 200_000
-NFSP_Q_REPLAY   = 200_000
-NFSP_Q_UPDATE   = 500
-NFSP_ETA        = 0.25
-NFSP_EPS_MIN    = 0.05
-NFSP_POLICY_SAMPLE_FREQ = 1_000   # steps entre sample_episode_policy
+NFSP_RL_LR         = 1e-4
+NFSP_SL_LR         = 1e-4
+NFSP_BATCH         = 512
+NFSP_RESERVOIR     = 1_000_000
+NFSP_Q_REPLAY      = 1_000_000
+NFSP_Q_TRAIN_EVERY = 64
+NFSP_Q_UPDATE      = 2_000
+NFSP_WARMUP        = 5_000
+NFSP_ETA           = 0.25
+NFSP_EPS_MIN       = 0.05
+NFSP_POLICY_SAMPLE_FREQ = 1_000
 
 
 
@@ -287,7 +290,7 @@ def run_dqn(save_dir, total_timesteps, device):
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    eps_decay = int(total_timesteps * 0.5)
+    eps_decay = int(total_timesteps * 0.8)
 
     dqn = DQNAgent(
         num_actions=N_ACTIONS,
@@ -296,7 +299,7 @@ def run_dqn(save_dir, total_timesteps, device):
         learning_rate=DQN_LR,
         batch_size=DQN_BATCH,
         replay_memory_size=DQN_MEMORY,
-        replay_memory_init_size=DQN_BATCH,
+        replay_memory_init_size=DQN_WARMUP,
         update_target_estimator_every=DQN_UPDATE_TGT,
         epsilon_decay_steps=eps_decay,
         epsilon_end=DQN_EPS_MIN,
@@ -438,7 +441,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    eps_decay = int(total_timesteps * 0.5)
+    eps_decay = int(total_timesteps * 0.8)
 
     def make_nfsp():
         return NFSPAgent(
@@ -455,9 +458,9 @@ def run_nfsp(save_dir, total_timesteps, device):
             anticipatory_param=NFSP_ETA,
             q_epsilon_decay_steps=eps_decay,
             q_epsilon_end=NFSP_EPS_MIN,
-            q_replay_memory_init_size=NFSP_BATCH,
+            q_replay_memory_init_size=NFSP_WARMUP,
             q_batch_size=NFSP_BATCH,
-            q_train_every=DQN_TRAIN_EVERY,
+            q_train_every=NFSP_Q_TRAIN_EVERY,
             device=device,
         )
 
