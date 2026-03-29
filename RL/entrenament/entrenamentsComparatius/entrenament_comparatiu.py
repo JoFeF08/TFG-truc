@@ -207,7 +207,7 @@ def wrap_env_aplanat(env):
 def build_opponent_map(num_envs):
     """Retorna un dict {env_idx: {'type': str, 'pid': int}} per als entorns."""
     opp_map = {}
-    n_random = int(num_envs * PCT_RANDOM)
+    n_random = max(1, int(num_envs * PCT_RANDOM))
     n_regles = int(num_envs * PCT_REGLES)
     for i in range(num_envs):
         if i < n_random:
