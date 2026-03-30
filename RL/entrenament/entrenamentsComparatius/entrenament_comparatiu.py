@@ -671,7 +671,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     pbar = trange(1, num_updates + 1, desc='PPO')
     for update in pbar:
         buffer.step = 0  # reset buffer pointer
-        for step in range(NUM_STEPS):
+        for step in range(num_steps):
             global_step += num_envs
 
             obs_t, masks_t = _extract_obs_ppo(current_states)
@@ -734,12 +734,12 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
         )
 
         b_obs, b_act, b_lp, b_adv, b_ret, b_masks, b_il = buffer.get(advantages, returns)
-        b_inds = np.arange(num_envs * NUM_STEPS)
+        b_inds = np.arange(num_envs * num_steps)
 
         net.train()
         for _ in range(PPO_EPOCHS):
             np.random.shuffle(b_inds)
-            for start in range(0, num_envs * NUM_STEPS, ppo_minibatch):
+            for start in range(0, num_envs * num_steps, ppo_minibatch):
                 mb = b_inds[start:start + ppo_minibatch]
                 loss, pg_loss, v_loss, ent_loss = calcular_perdua_ppo(
                     agent, b_obs[mb], b_act[mb], b_lp[mb],
@@ -758,7 +758,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
         last_loss    = pg_loss_val
 
         # Avaluació
-        if global_step % eval_every < (num_envs * NUM_STEPS):
+        if global_step % eval_every < (num_envs * num_steps):
             wr_r, wr_g, metric = evaluar_agent(agent, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, pg_loss_val,
