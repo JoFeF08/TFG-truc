@@ -641,7 +641,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     init_log(log_path)
 
     num_envs = num_envs_override or NUM_ENVS_PPO
-    num_steps = NUM_STEPS * NUM_ENVS_PPO // num_envs
+    num_steps = min(NUM_STEPS * NUM_ENVS_PPO // num_envs, 2048)
     eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     ppo_minibatch = min(PPO_MINIBATCH, num_envs * num_steps)
     net   = SimpleActorCritic(OBS_DIM, N_ACTIONS, HIDDEN_SIZE).to(device)
