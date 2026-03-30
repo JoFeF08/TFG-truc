@@ -142,3 +142,40 @@ class SubprocVecEnv:
     def __del__(self):
         if self.processes:
             self.close()
+
+
+class DummyVecEnv:
+    """Versió sense subprocessos de SubprocVecEnv. Ideal per num_envs=1."""
+    def __init__(self, num_envs, env_config):
+        self.num_envs = num_envs
+        base_seed = env_config.get('seed', 42)
+        self.envs = []
+        for i in range(num_envs):
+            cfg = env_config.copy()
+            cfg['seed'] = base_seed + i
+            self.envs.append(TrucEnv(cfg))
+
+    def step(self, actions):
+        states_players, rewards_list, dones_list = [], [], []
+        for env, action in zip(self.envs, actions):
+            next_s, next_p_id = env.step(action)
+            raw = next_s['raw_obs']
+            ri = raw.get('reward_intermedis', [0.0, 0.0])
+            done = (next_p_id is None)
+            if done:
+                next_s, next_p_id = env.reset()
+            env.action_recorder = []
+            states_players.append((next_s, next_p_id))
+            rewards_list.append(ri)
+            dones_list.append(done)
+        return states_players, rewards_list, dones_list
+
+    def reset_all(self):
+        results = []
+        for env in self.envs:
+            state, player_id = env.reset()
+            results.append((state, player_id))
+        return results
+
+    def close(self):
+        pass

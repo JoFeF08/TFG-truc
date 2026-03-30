@@ -30,7 +30,7 @@ from rlcard.utils import set_seed
 from joc.entorn import TrucEnv
 from joc.entorn.cartes_accions import ACTION_LIST
 
-from RL.entrenament.entrenamentsPropis.parallel_env import SubprocVecEnv
+from RL.entrenament.entrenamentsPropis.parallel_env import SubprocVecEnv, DummyVecEnv
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
 from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo
 from RL.models.model_propi.agent_regles import AgentRegles
@@ -654,7 +654,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
 
     opp_map = build_opponent_map(num_envs)
-    vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
+    vec_env = DummyVecEnv(num_envs, ENV_CONFIG) if num_envs == 1 else SubprocVecEnv(num_envs, ENV_CONFIG)
 
     results = vec_env.reset_all()
     current_states = [r[0] for r in results]
