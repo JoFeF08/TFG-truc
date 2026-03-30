@@ -1,8 +1,0 @@
-Comparativa algorismes RL - sáb 28 mar 2026 18:00:31 CET
-Timesteps per algorisme: 24000000
--------------------------------------------
-dqn: 3337s (0h 55m 37s)
-nfsp: 13241s (3h 40m 41s)
-ppo: 2377s (0h 39m 37s)
--------------------------------------------
-Tots els experiments completats: sáb 28 mar 2026 23:17:11 CET
