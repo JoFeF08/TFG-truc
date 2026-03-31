@@ -23,14 +23,14 @@ from RL.models.model_propi.model_ppo.ppo_gru_nash.cap_ppo_gru_nash import PPOGru
 from RL.models.model_propi.model_ppo.ppo_gru_nash.agent_ppo_gru_nash import PPOGruNashAgent
 from RL.entrenament.entrenamentsPropis.ppo_gru.buffers_ppo_gru import RolloutBufferGRU
 from RL.entrenament.entrenamentsPropis.ppo_gru_nash.buffers_sl import ReservoirBuffer
-from RL.models.model_propi.model_ppo.ppo.ppo_loss import calcular_gae, calcular_perdua_ppo_nucleu
+from RL.models.model_propi.model_ppo.ppo_loss import calcular_gae, calcular_perdua_ppo_nucleu
 from rlcard.agents import RandomAgent
 from joc.entorn.env import TrucEnv
 from RL.models.model_propi.model_ppo.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
 from RL.models.model_propi.model_ppo.ppo.agent_ppo_mlp import PPOMlpAgent
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.agent_regles import AgentRegles
-from RL.models.model_propi.model_ppo.ppo.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
+from RL.models.model_propi.model_ppo.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
 
 # Hyperparams Constants
 NUM_ENVS = 48  # Mantenim original per evitar duplicar càrrega

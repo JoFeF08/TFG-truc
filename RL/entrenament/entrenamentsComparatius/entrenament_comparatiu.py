@@ -32,7 +32,7 @@ from joc.entorn.cartes_accions import ACTION_LIST
 
 from joc.entorn.parallel_env import SubprocVecEnv, DummyVecEnv
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
-from RL.models.model_propi.model_ppo.ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
+from RL.models.model_propi.model_ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
 from RL.models.model_propi.agent_regles import AgentRegles
 
 # Silenciar logs
