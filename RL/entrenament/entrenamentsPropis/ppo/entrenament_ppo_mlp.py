@@ -17,15 +17,15 @@ try:
 except Exception:
     pass
 
-from RL.entrenament.entrenamentsPropis.parallel_env import SubprocVecEnv
-from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
-from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
+from joc.entorn.parallel_env import SubprocVecEnv
+from RL.models.model_propi.model_ppo.ppo.cap_ppo_mlp import PPOMlpNet, SPLIT, OBS_CONTEXT_SIZE
+from RL.models.model_propi.model_ppo.ppo.agent_ppo_mlp import PPOMlpAgent
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
 from rlcard.agents import RandomAgent
-from RL.entrenament.entrenamentsPropis.ppo_loss import calcular_gae, calcular_perdua_ppo
+from RL.models.model_propi.model_ppo.ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.agent_regles import AgentRegles
-from RL.entrenament.entrenamentsPropis.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
+from RL.models.model_propi.model_ppo.ppo.ppo_utils import extract_obs, evaluar_contra_random, evaluar_contra_regles
 
 # Hyperparams Constants
 NUM_ENVS = 48

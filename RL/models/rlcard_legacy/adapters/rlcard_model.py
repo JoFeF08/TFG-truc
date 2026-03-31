@@ -143,8 +143,8 @@ def _crear_ppo_mlp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucMode
     Crea un model PPO MLP unificat.
     """
     import torch
-    from RL.models.model_propi.ppo.cap_ppo_mlp import PPOMlpNet
-    from RL.models.model_propi.ppo.agent_ppo_mlp import PPOMlpAgent
+    from RL.models.model_propi.model_ppo.ppo.cap_ppo_mlp import PPOMlpNet
+    from RL.models.model_propi.model_ppo.ppo.agent_ppo_mlp import PPOMlpAgent
 
     ruta = spec["ruta"]
     if not os.path.exists(ruta):
@@ -186,8 +186,8 @@ def _crear_ppo_gru(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucMode
     Crea un model PPO GRU unificat.
     """
     import torch
-    from RL.models.model_propi.ppo_gru.cap_ppo_gru import PPOGruNet
-    from RL.models.model_propi.ppo_gru.agent_ppo_gru import PPOGruAgent
+    from RL.models.model_propi.model_ppo.ppo_gru.cap_ppo_gru import PPOGruNet
+    from RL.models.model_propi.model_ppo.ppo_gru.agent_ppo_gru import PPOGruAgent
 
     ruta = spec.get("ruta", "best.pt")
     if not os.path.exists(ruta):
