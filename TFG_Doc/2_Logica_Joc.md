@@ -223,7 +223,7 @@ flowchart TD
 
 ## Entorn d'Entrenament per Mans (joc_ma)
 
-`TrucGameMa` és una variant de `TrucGame` (veure [doc_tfg.md](doc_tfg.md) §Motor Lògic) dissenyada perquè **cada mà sigui un episodi complet**.
+`TrucGameMa` és una variant de `TrucGame` (veure apartat inferior del Motor Lògic d'aquest mateix document) dissenyada perquè **cada mà sigui un episodi complet**.
 
 #### Constructor
 
