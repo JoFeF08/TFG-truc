@@ -30,7 +30,7 @@ from rlcard.utils import set_seed
 from joc.entorn import TrucEnv
 from joc.entorn.cartes_accions import ACTION_LIST
 
-from joc.entorn.parallel_env import SubprocVecEnv, DummyVecEnv
+from joc.entorn.parallel_env import SubprocVecEnv
 from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
 from RL.models.model_propi.model_ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
 from RL.models.model_propi.agent_regles import AgentRegles
@@ -655,9 +655,15 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
 
     opp_map = build_opponent_map(num_envs)
-    vec_env = DummyVecEnv(num_envs, ENV_CONFIG) if num_envs == 1 else SubprocVecEnv(num_envs, ENV_CONFIG)
-
-    results = vec_env.reset_all()
+    if num_envs == 1:
+        cfg = ENV_CONFIG.copy()
+        cfg['seed'] = ENV_CONFIG.get('seed', SEED)
+        env_single = TrucEnv(cfg)
+        state0, pid0 = env_single.reset()
+        results = [(state0, pid0)]
+    else:
+        vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
+        results = vec_env.reset_all()
     current_states = [r[0] for r in results]
 
     num_updates = total_timesteps // (num_envs * num_steps)
@@ -703,7 +709,19 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
                     # selfplay: el learner actua (no sobreescribim)
 
             actions_np = action.cpu().numpy()
-            next_states_players, rewards_list, dones_list = vec_env.step(actions_np)
+            if num_envs == 1:
+                next_s, next_p_id = env_single.step(int(actions_np[0]))
+                raw = next_s['raw_obs']
+                ri = raw.get('reward_intermedis', [0.0, 0.0])
+                done = (next_p_id is None)
+                if done:
+                    next_s, next_p_id = env_single.reset()
+                env_single.action_recorder = []
+                next_states_players = [(next_s, next_p_id)]
+                rewards_list = [ri]
+                dones_list = [done]
+            else:
+                next_states_players, rewards_list, dones_list = vec_env.step(actions_np)
 
             step_rewards = []
             for i in range(num_envs):
@@ -780,7 +798,8 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
         if update % 100 == 0:
             torch.cuda.empty_cache()
 
-    vec_env.close()
+    if num_envs > 1:
+        vec_env.close()
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
