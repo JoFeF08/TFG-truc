@@ -17,7 +17,7 @@ PRETRAIN_SCRIPT="RL/entrenament/entrenamentEstatTruc/preentrenar_cos.py"
 REGISTRES_DIR="RL/entrenament/entrenamentEstatTruc/registres"
 COS_WEIGHTS_DEFAULT="${REGISTRES_DIR}/22_03_26_a_les_0118/models/best_pesos_cos_truc.pth"
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
-OUT_BASE="RL/notebooks/finals/2_comparacio_cos/resultats_fase2_${TIMESTAMP}"
+OUT_BASE="TFG_Doc/notebooks/2_comparacio_cos/resultats_fase2_${TIMESTAMP}"
 RESUM="${OUT_BASE}/resum_temps.txt"
 
 export PYTHONPATH="$(pwd):$PYTHONPATH"
