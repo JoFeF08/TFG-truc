@@ -55,7 +55,7 @@ LR               = 3e-4
 GAMMA            = 0.995
 GAE_LAMBDA       = 0.95
 CLIP_COEF        = 0.2
-ENT_COEF         = 0.03
+ENT_COEF         = 0.02
 VF_COEF          = 0.5
 
 # Fine-tune
@@ -120,11 +120,15 @@ def main():
     parser.add_argument('--save_dir', type=str, default=None)
     parser.add_argument('--unfreeze_fraction', type=float, default=UNFREEZE_FRACTION)
     parser.add_argument('--num_envs', type=int, default=NUM_ENVS)
+    parser.add_argument('--ent_coef', type=float, default=ENT_COEF)
+    parser.add_argument('--lr', type=float, default=LR)
     args = parser.parse_args()
 
     total_timesteps = args.total_timesteps
     num_envs = args.num_envs
     mode = args.mode
+    ent_coef = args.ent_coef
+    lr = args.lr
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'[{device.type.upper()}] Fase 2 — PPO+Cos mode={mode.upper()} | {total_timesteps/1e6:.0f}M steps | {num_envs} envs')
@@ -162,19 +166,19 @@ def main():
 
     # Post-init segons mode
     if mode == 'no_cos':
-        optimizer = optim.Adam(net.parameters(), lr=LR, eps=1e-5)
+        optimizer = optim.Adam(net.parameters(), lr=lr, eps=1e-5)
         print(f'[No Cos] MLP directe. Params: {sum(p.numel() for p in net.parameters()):,}')
     elif mode == 'scratch':
         net.unfreeze_cos()  # Tot entrena des de zero
-        optimizer = optim.Adam(net.parameters(), lr=LR, eps=1e-5)
+        optimizer = optim.Adam(net.parameters(), lr=lr, eps=1e-5)
         print(f'[Scratch] Cos aleatori, tot entrena. Params: {sum(p.numel() for p in net.parameters() if p.requires_grad):,}')
     elif mode == 'frozen':
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lr, eps=1e-5)
         n_train = sum(p.numel() for p in net.parameters() if p.requires_grad)
         n_frozen = sum(p.numel() for p in net.parameters() if not p.requires_grad)
         print(f'[Frozen] Cos SL congelat. Trainable: {n_train:,} | Frozen: {n_frozen:,}')
     elif mode == 'finetune':
-        optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=LR, eps=1e-5)
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lr, eps=1e-5)
         unfreeze_step = int(total_timesteps * args.unfreeze_fraction)
         has_unfrozen = False
         print(f'[Finetune] Cos SL congelat fins step {unfreeze_step:,} ({args.unfreeze_fraction*100:.0f}%)')
@@ -298,7 +302,7 @@ def main():
                 pg['lr'] = base_lr * frac
         else:
             for pg in optimizer.param_groups:
-                pg['lr'] = LR * frac
+                pg['lr'] = lr * frac
 
         # PPO update
         net.train()
@@ -310,7 +314,7 @@ def main():
                     agent, b_obs[mb], b_act[mb], b_lp[mb],
                     b_adv[mb], b_ret[mb], b_masks[mb],
                     is_learning=b_il[mb],
-                    coef_retall=CLIP_COEF, coef_ent=ENT_COEF, coef_v=VF_COEF,
+                    coef_retall=CLIP_COEF, coef_ent=ent_coef, coef_v=VF_COEF,
                 )
                 optimizer.zero_grad()
                 loss.backward()
