@@ -1,0 +1,9 @@
+Fase 2: Comparació Cos - mar 31 mar 2026 18:39:34 CEST
+Timesteps: 24000000
+Cos pre-entrenat: RL/entrenament/entrenamentEstatTruc/registres/22_03_26_a_les_0118/models/best_pesos_cos_truc.pth
+-------------------------------------------
+scratch: 2640s (0h 44m 0s)
+frozen: 2566s (0h 42m 46s)
+finetune: 2968s (0h 49m 28s)
+-------------------------------------------
+Completat: mar 31 mar 2026 20:55:48 CEST
