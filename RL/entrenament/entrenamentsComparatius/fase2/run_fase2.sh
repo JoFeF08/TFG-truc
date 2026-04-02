@@ -82,7 +82,8 @@ run_and_time() {
     echo ">> ${name} completat en ${HORES}h ${MINUTS}m ${SEGONS}s"
 }
 
-# Executar els 3 modes
+# Executar els 4 modes
+run_and_time "no_cos"   "no_cos"   ""
 run_and_time "scratch"  "scratch"  "--cos_weights none"
 run_and_time "frozen"   "frozen"   "--cos_weights \"$COS_WEIGHTS\""
 run_and_time "finetune" "finetune" "--cos_weights \"$COS_WEIGHTS\""

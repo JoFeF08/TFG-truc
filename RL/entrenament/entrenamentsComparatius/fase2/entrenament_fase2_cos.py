@@ -19,6 +19,7 @@ import argparse
 import csv
 import time
 import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -112,7 +113,7 @@ def append_log(log_path, step, games, loss, wr_r, wr_g, metric, elapsed):
 
 def main():
     parser = argparse.ArgumentParser(description='Fase 2: PPO amb Cos (scratch/frozen/finetune)')
-    parser.add_argument('--mode', choices=['scratch', 'frozen', 'finetune'], required=True)
+    parser.add_argument('--mode', choices=['no_cos', 'scratch', 'frozen', 'finetune'], required=True)
     parser.add_argument('--total_timesteps', type=int, default=TOTAL_TIMESTEPS)
     parser.add_argument('--cos_weights', type=str, default=None,
                         help=f"Ruta als pesos SL del cos. 'none' per COS aleatori. Default: {os.path.basename(COS_WEIGHTS_PATH)}")
@@ -129,18 +130,41 @@ def main():
     print(f'[{device.type.upper()}] Fase 2 — PPO+Cos mode={mode.upper()} | {total_timesteps/1e6:.0f}M steps | {num_envs} envs')
 
     # --- Model ---
+    use_cos = (mode != 'no_cos')
+
     # Determinar pesos del cos
-    if mode == 'scratch' or args.cos_weights == 'none':
-        cos_w = 'none'  # No existeix → PPOMlpNet no carrega pesos
+    if mode in ('scratch', 'no_cos') or args.cos_weights == 'none':
+        cos_w = 'none'
     elif args.cos_weights:
         cos_w = args.cos_weights
     else:
         cos_w = None  # Usa COS_WEIGHTS_PATH per defecte
 
-    net = PPOMlpNet(n_actions=N_ACTIONS, hidden_size=256, ruta_weights=cos_w, device=device)
+    # Si necessitem pesos SL i no existeixen, llençar pre-entrenament
+    if mode in ('frozen', 'finetune') and cos_w != 'none':
+        weights_path = cos_w or COS_WEIGHTS_PATH
+        if not os.path.exists(weights_path):
+            print(f'\n[AVÍS] No s\'han trobat pesos pre-entrenats a: {weights_path}')
+            print('[AVÍS] Iniciant pre-entrenament supervisat del cos...\n')
+            pretrain_script = os.path.join(root_path, 'RL', 'entrenament', 'entrenamentEstatTruc', 'preentrenar_cos.py')
+            ret = subprocess.run([sys.executable, pretrain_script], cwd=root_path)
+            if ret.returncode != 0:
+                raise RuntimeError('El pre-entrenament del cos ha fallat.')
+            # Buscar els pesos més recents generats
+            registres_dir = Path(root_path) / 'RL' / 'entrenament' / 'entrenamentEstatTruc' / 'registres'
+            latest_run = sorted(registres_dir.iterdir(), key=lambda p: p.stat().st_mtime)[-1]
+            cos_w = str(latest_run / 'models' / 'best_pesos_cos_truc.pth')
+            if not os.path.exists(cos_w):
+                raise FileNotFoundError(f'Pre-entrenament completat però no s\'ha trobat: {cos_w}')
+            print(f'[OK] Pesos pre-entrenats generats: {cos_w}\n')
+
+    net = PPOMlpNet(n_actions=N_ACTIONS, hidden_size=256, ruta_weights=cos_w, device=device, use_cos=use_cos)
 
     # Post-init segons mode
-    if mode == 'scratch':
+    if mode == 'no_cos':
+        optimizer = optim.Adam(net.parameters(), lr=LR, eps=1e-5)
+        print(f'[No Cos] MLP directe. Params: {sum(p.numel() for p in net.parameters()):,}')
+    elif mode == 'scratch':
         net.unfreeze_cos()  # Tot entrena des de zero
         optimizer = optim.Adam(net.parameters(), lr=LR, eps=1e-5)
         print(f'[Scratch] Cos aleatori, tot entrena. Params: {sum(p.numel() for p in net.parameters() if p.requires_grad):,}')

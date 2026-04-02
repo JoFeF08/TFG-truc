@@ -15,42 +15,57 @@ class PPOMlpNet(nn.Module):
     """
     Xarxa Actor-Critic base
     """
-    def __init__(self, n_actions, hidden_size=256, ruta_weights=None, device='cpu'):
+    def __init__(self, n_actions, hidden_size=256, ruta_weights=None, device='cpu', use_cos=True):
         super().__init__()
         self.device = device
-        self.cos = CosMultiInput()
-        
-        # Carreguem pesos
-        w = ruta_weights or COS_WEIGHTS_PATH
-        if w and os.path.exists(w):
-            self.cos.load_state_dict(torch.load(w, map_location=self.device, weights_only=True))
-            print(f"[PPOMlpNet] Pesos carregats al COS: {os.path.basename(os.path.dirname(os.path.dirname(w)))}")
-        else:
-            print("[PPOMlpNet] Avís: Cap pes pre-entrenat trobat, usant random.")
-            
-        # Congelem cos
-        for p in self.cos.parameters():
-            p.requires_grad = False
-        self.cos.eval()
+        self.use_cos = use_cos
 
-        self.cos_congelat = True
+        if use_cos:
+            self.cos = CosMultiInput()
+
+            # Carreguem pesos
+            w = ruta_weights or COS_WEIGHTS_PATH
+            if w and os.path.exists(w):
+                self.cos.load_state_dict(torch.load(w, map_location=self.device, weights_only=True))
+                print(f"[PPOMlpNet] Pesos carregats al COS: {os.path.basename(os.path.dirname(os.path.dirname(w)))}")
+            else:
+                print("[PPOMlpNet] Avís: Cap pes pre-entrenat trobat, usant random.")
+
+            # Congelem cos
+            for p in self.cos.parameters():
+                p.requires_grad = False
+            self.cos.eval()
+            self.cos_congelat = True
+            feature_dim = LATENT_DIM
+        else:
+            self.cos = None
+            self.cos_congelat = False
+            obs_dim = SPLIT + OBS_CONTEXT_SIZE  # 239
+            self.mlp_encoder = nn.Sequential(
+                nn.Linear(obs_dim, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, LATENT_DIM),
+                nn.ReLU(),
+            )
+            feature_dim = LATENT_DIM
+            print(f"[PPOMlpNet] Mode sense COS: MLP directe ({obs_dim} → {LATENT_DIM})")
 
         self.actor = nn.Sequential(
-            nn.Linear(LATENT_DIM, hidden_size),
+            nn.Linear(feature_dim, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, n_actions)
         )
-        
+
         self.critic = nn.Sequential(
-            nn.Linear(LATENT_DIM, hidden_size),
+            nn.Linear(feature_dim, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, 1)
         )
-        
+
         self.to(device)
 
     def _prepare_obs(self, obs):
@@ -68,8 +83,17 @@ class PPOMlpNet(nn.Module):
         return cartes, context
 
     def get_features(self, obs):
+        if not self.use_cos:
+            if not isinstance(obs, torch.Tensor):
+                obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+            elif obs.device != self.device:
+                obs = obs.to(self.device)
+            if len(obs.shape) == 1:
+                obs = obs.unsqueeze(0)
+            return self.mlp_encoder(obs)
+
         cartes, context = self._prepare_obs(obs)
-        
+
         # Modo freeze si toca
         if self.cos_congelat:
             with torch.no_grad():
@@ -81,6 +105,8 @@ class PPOMlpNet(nn.Module):
 
     def unfreeze_cos(self):
         """Descongela el cos per a fine-tuning"""
+        if not self.use_cos:
+            return
         for p in self.cos.parameters():
             p.requires_grad = True
         self.cos_congelat = False
@@ -89,6 +115,8 @@ class PPOMlpNet(nn.Module):
 
     def get_param_groups(self, lr_cos=1e-5, lr_mlp=5e-4):
         """Retorna els paràmetres dividits per LR"""
+        if not self.use_cos:
+            return [{"params": self.parameters(), "lr": lr_mlp}]
         return [
             {"params": self.cos.parameters(), "lr": lr_cos},
             {"params": self.actor.parameters(), "lr": lr_mlp},
