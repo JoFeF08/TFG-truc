@@ -188,8 +188,8 @@ class TrucGame:
                     self.reward_intermedis[1-winner_team] -= 1.0 * (pts_truc / 24.0)  # qui fa fora: 1.0x (retirada estratègica)
 
                     if max(self.score) >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.current_player
-                    
+                        return self.get_state(self.current_player), None
+
                     self.response_state = ResponseState.NO_PENDING
                     self.hist_cartes_ant = list(self.hist_cartes)
                     self._reset_hand_state()
@@ -338,7 +338,7 @@ class TrucGame:
                     self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
                     if max(self.score) >= self.puntuacio_final:
-                        return self.get_state(self.current_player), self.current_player
+                        return self.get_state(self.current_player), None
 
                     self.hist_cartes_ant = list(self.hist_cartes)
                     self._reset_hand_state()

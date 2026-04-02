@@ -54,7 +54,7 @@ LR               = 3e-4
 GAMMA            = 0.995
 GAE_LAMBDA       = 0.95
 CLIP_COEF        = 0.2
-ENT_COEF         = 0.01
+ENT_COEF         = 0.03
 VF_COEF          = 0.5
 
 # Fine-tune
@@ -261,12 +261,20 @@ def main():
         # Finetune: descongelar cos
         if mode == 'finetune' and not has_unfrozen and global_step >= unfreeze_step:
             net.unfreeze_cos()
-            optimizer = optim.Adam(
-                net.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=LR),
-                eps=1e-5
-            )
+            param_groups = net.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=FINETUNE_LR_MLP)
+            optimizer = optim.Adam(param_groups, eps=1e-5)
+            finetune_base_lrs = [pg['lr'] for pg in optimizer.param_groups]
             has_unfrozen = True
             print(f'\n[Finetune] Cos descongelat al step {global_step:,}. Optimizer reconstruït.')
+
+        # LR scheduling: decay lineal cap a 0
+        frac = 1.0 - (update - 1) / num_updates
+        if mode == 'finetune' and has_unfrozen:
+            for pg, base_lr in zip(optimizer.param_groups, finetune_base_lrs):
+                pg['lr'] = base_lr * frac
+        else:
+            for pg in optimizer.param_groups:
+                pg['lr'] = LR * frac
 
         # PPO update
         net.train()
