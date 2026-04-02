@@ -291,18 +291,8 @@ def main():
             net.unfreeze_cos()
             param_groups = net.get_param_groups(lr_cos=FINETUNE_LR_COS, lr_mlp=FINETUNE_LR_MLP)
             optimizer = optim.Adam(param_groups, eps=1e-5)
-            finetune_base_lrs = [pg['lr'] for pg in optimizer.param_groups]
             has_unfrozen = True
             print(f'\n[Finetune] Cos descongelat al step {global_step:,}. Optimizer reconstruït.')
-
-        # LR scheduling: decay lineal cap a 0
-        frac = 1.0 - (update - 1) / num_updates
-        if mode == 'finetune' and has_unfrozen:
-            for pg, base_lr in zip(optimizer.param_groups, finetune_base_lrs):
-                pg['lr'] = base_lr * frac
-        else:
-            for pg in optimizer.param_groups:
-                pg['lr'] = lr * frac
 
         # PPO update
         net.train()
