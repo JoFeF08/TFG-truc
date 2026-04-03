@@ -38,6 +38,9 @@ def worker(remote, parent_remote, env_config, seed):
                 ri = raw.get('reward_intermedis', [0.0, 0.0])
                 done = (next_p_id is None)
 
+                # Amplificar rewards intermedis (x5) per millorar credit assignment
+                ri = [r * 5.0 for r in ri]
+
                 if done:
                     payoffs = env.game.get_payoffs()
                     ri = [ri[j] + payoffs[j] for j in range(len(ri))]

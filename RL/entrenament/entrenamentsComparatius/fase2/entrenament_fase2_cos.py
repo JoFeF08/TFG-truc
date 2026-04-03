@@ -46,14 +46,14 @@ from joc.entorn.cartes_accions import ACTION_LIST
 from rlcard.agents import RandomAgent
 
 # Constants
-NUM_ENVS         = 96
-NUM_STEPS        = 1024
+NUM_ENVS         = 48
+NUM_STEPS        = 2048
 MINIBATCH_SIZE   = 2048 
-UPDATE_EPOCHS    = 7
+UPDATE_EPOCHS    = 10
 TOTAL_TIMESTEPS  = 24_000_000
 LR               = 3e-4
-GAMMA            = 0.999
-GAE_LAMBDA       = 0.99
+GAMMA            = 0.995
+GAE_LAMBDA       = 0.95
 CLIP_COEF        = 0.2
 ENT_COEF         = 0.01
 VF_COEF          = 0.5
