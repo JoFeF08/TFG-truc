@@ -46,9 +46,9 @@ from joc.entorn.cartes_accions import ACTION_LIST
 from rlcard.agents import RandomAgent
 
 # Constants
-NUM_ENVS         = 48
-NUM_STEPS        = 256
-MINIBATCH_SIZE   = 1024
+NUM_ENVS         = 96
+NUM_STEPS        = 1024
+MINIBATCH_SIZE   = 2048 
 UPDATE_EPOCHS    = 7
 TOTAL_TIMESTEPS  = 24_000_000
 LR               = 3e-4
