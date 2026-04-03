@@ -55,7 +55,7 @@ LR               = 3e-4
 GAMMA            = 0.995
 GAE_LAMBDA       = 0.95
 CLIP_COEF        = 0.2
-ENT_COEF         = 0.02
+ENT_COEF         = 0.01
 VF_COEF          = 0.5
 
 # Fine-tune

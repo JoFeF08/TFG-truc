@@ -4,7 +4,7 @@ from RL.models.core.feature_extractor import CosMultiInput
 import os
 from pathlib import Path
 
-LATENT_DIM = 128
+LATENT_DIM = 256
 OBS_CARTES_SHAPE = (6, 4, 9)
 SPLIT = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2] # 216
 OBS_CONTEXT_SIZE = 23
@@ -36,35 +36,44 @@ class PPOMlpNet(nn.Module):
                 p.requires_grad = False
             self.cos.eval()
             self.cos_congelat = True
-            feature_dim = LATENT_DIM
         else:
             self.cos = None
             self.cos_congelat = False
             obs_dim = SPLIT + OBS_CONTEXT_SIZE  # 239
-            self.mlp_encoder = nn.Sequential(
+            print(f"[PPOMlpNet] Mode sense COS: MLP directe ({obs_dim} → {hidden_size} → {hidden_size})")
+
+        if use_cos:
+            self.actor = nn.Sequential(
+                nn.Linear(LATENT_DIM, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, n_actions)
+            )
+            self.critic = nn.Sequential(
+                nn.Linear(LATENT_DIM, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, 1)
+            )
+        else:
+            # Arquitectura equivalent a fase1: actor i critic independents sobre obs
+            obs_dim = SPLIT + OBS_CONTEXT_SIZE  # 239
+            self.actor = nn.Sequential(
                 nn.Linear(obs_dim, hidden_size),
                 nn.ReLU(),
-                nn.Linear(hidden_size, LATENT_DIM),
+                nn.Linear(hidden_size, hidden_size),
                 nn.ReLU(),
+                nn.Linear(hidden_size, n_actions)
             )
-            feature_dim = LATENT_DIM
-            print(f"[PPOMlpNet] Mode sense COS: MLP directe ({obs_dim} → {LATENT_DIM})")
-
-        self.actor = nn.Sequential(
-            nn.Linear(feature_dim, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, n_actions)
-        )
-
-        self.critic = nn.Sequential(
-            nn.Linear(feature_dim, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, 1)
-        )
+            self.critic = nn.Sequential(
+                nn.Linear(obs_dim, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, 1)
+            )
 
         self.to(device)
 
@@ -84,13 +93,7 @@ class PPOMlpNet(nn.Module):
 
     def get_features(self, obs):
         if not self.use_cos:
-            if not isinstance(obs, torch.Tensor):
-                obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
-            elif obs.device != self.device:
-                obs = obs.to(self.device)
-            if len(obs.shape) == 1:
-                obs = obs.unsqueeze(0)
-            return self.mlp_encoder(obs)
+            raise RuntimeError("get_features no s'ha d'usar en mode no_cos — actor/critic reben obs directament.")
 
         cartes, context = self._prepare_obs(obs)
 
@@ -124,5 +127,13 @@ class PPOMlpNet(nn.Module):
         ]
 
     def forward(self, obs):
+        if not self.use_cos:
+            if not isinstance(obs, torch.Tensor):
+                obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+            elif obs.device != self.device:
+                obs = obs.to(self.device)
+            if len(obs.shape) == 1:
+                obs = obs.unsqueeze(0)
+            return self.actor(obs), self.critic(obs)
         z = self.get_features(obs)
         return self.actor(z), self.critic(z)
