@@ -45,7 +45,7 @@ from RL.models.model_propi.agent_regles import AgentRegles
 from joc.entorn.cartes_accions import ACTION_LIST
 from rlcard.agents import RandomAgent
 
-# Constants (idèntiques a Fase 1 PPO)
+# Constants
 NUM_ENVS         = 48
 NUM_STEPS        = 256
 MINIBATCH_SIZE   = 1024
@@ -142,7 +142,7 @@ def main():
     elif args.cos_weights:
         cos_w = args.cos_weights
     else:
-        cos_w = None  # Usa COS_WEIGHTS_PATH per defecte
+        cos_w = None
 
     # Si necessitem pesos SL i no existeixen, llençar pre-entrenament
     if mode in ('frozen', 'finetune') and cos_w != 'none':
@@ -154,7 +154,8 @@ def main():
             ret = subprocess.run([sys.executable, pretrain_script], cwd=root_path)
             if ret.returncode != 0:
                 raise RuntimeError('El pre-entrenament del cos ha fallat.')
-            # Buscar els pesos més recents generats
+        
+
             registres_dir = Path(root_path) / 'RL' / 'entrenament' / 'entrenamentEstatTruc' / 'registres'
             latest_run = sorted(registres_dir.iterdir(), key=lambda p: p.stat().st_mtime)[-1]
             cos_w = str(latest_run / 'models' / 'best_pesos_cos_truc.pth')
@@ -185,19 +186,17 @@ def main():
 
     agent = PPOMlpAgent(net, N_ACTIONS, device=device)
 
-    # --- Entorns paral·lels ---
     vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
 
-    # --- Oponents ---
+    # Oponents
     rand_opp = RandomAgent(num_actions=N_ACTIONS)
     regles_opp = AgentRegles(num_actions=N_ACTIONS, seed=456)
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
     opp_map = build_opponent_map(num_envs)
 
-    # --- Buffer ---
     buffer = RolloutBuffer(NUM_STEPS, num_envs, OBS_DIM, action_dim=N_ACTIONS, device=device)
 
-    # --- Directori de sortida ---
+    # Directori de sortida
     if args.save_dir:
         save_dir = Path(args.save_dir)
     else:
@@ -207,7 +206,7 @@ def main():
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    # --- Iniciar entorns ---
+    # Entorns
     results = vec_env.reset_all()
     current_states = [r[0] for r in results]
 
@@ -240,7 +239,7 @@ def main():
                 action = dist.sample()
                 logprob = dist.log_prob(action)
 
-            # Sobreescriure accions oponents
+
             for i, opp in opp_map.items():
                 if active_players[i] == opp['pid']:
                     if opp['type'] == 'random':

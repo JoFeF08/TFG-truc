@@ -32,13 +32,16 @@ def worker(remote, parent_remote, env_config, seed):
             if cmd == 'step':
                 action = data
                 next_s, next_p_id = env.step(action)
-                
+
                 # Extraiem els rewards
                 raw = next_s['raw_obs']
                 ri = raw.get('reward_intermedis', [0.0, 0.0])
                 done = (next_p_id is None)
-                
+
+                # Afegir payoff fina
                 if done:
+                    payoffs = env.game.get_payoffs()
+                    ri = [ri[j] + payoffs[j] for j in range(len(ri))]
                     next_s, next_p_id = env.reset()
 
                 env.action_recorder = []
