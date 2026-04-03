@@ -8,6 +8,9 @@ LATENT_DIM = 256
 OBS_CARTES_SHAPE = (6, 4, 9)
 SPLIT = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2] # 216
 OBS_CONTEXT_SIZE = 23
+N_ACCIONS_CARTES  = 3   # índexs 0-2: play_card_0/1/2
+N_ACCIONS_APOSTES = 16  # índexs 3-18: apostes, vull/fora, senyes
+HEAD_SIZE = 64
 
 COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent.parent / "entrenament" / "entrenamentEstatTruc" / "registres" / "22_03_26_a_les_0118" / "models" / "best_pesos_cos_truc.pth")
 
@@ -43,10 +46,15 @@ class PPOMlpNet(nn.Module):
             print(f"[PPOMlpNet] Mode sense COS: MLP directe ({obs_dim} → {hidden_size} → {hidden_size})")
 
         if use_cos:
-            self.actor = nn.Sequential(
-                nn.Linear(LATENT_DIM, hidden_size),
+            self.cap_cartes = nn.Sequential(
+                nn.Linear(LATENT_DIM, HEAD_SIZE),
                 nn.ReLU(),
-                nn.Linear(hidden_size, n_actions)
+                nn.Linear(HEAD_SIZE, N_ACCIONS_CARTES)
+            )
+            self.cap_apostes = nn.Sequential(
+                nn.Linear(LATENT_DIM, HEAD_SIZE),
+                nn.ReLU(),
+                nn.Linear(HEAD_SIZE, N_ACCIONS_APOSTES)
             )
             self.critic = nn.Sequential(
                 nn.Linear(LATENT_DIM, hidden_size),
@@ -117,9 +125,10 @@ class PPOMlpNet(nn.Module):
         if not self.use_cos:
             return [{"params": self.parameters(), "lr": lr_mlp}]
         return [
-            {"params": self.cos.parameters(), "lr": lr_cos},
-            {"params": self.actor.parameters(), "lr": lr_mlp},
-            {"params": self.critic.parameters(), "lr": lr_mlp}
+            {"params": self.cos.parameters(),         "lr": lr_cos},
+            {"params": self.cap_cartes.parameters(),  "lr": lr_mlp},
+            {"params": self.cap_apostes.parameters(), "lr": lr_mlp},
+            {"params": self.critic.parameters(),      "lr": lr_mlp},
         ]
 
     def forward(self, obs):
@@ -132,4 +141,7 @@ class PPOMlpNet(nn.Module):
                 obs = obs.unsqueeze(0)
             return self.actor(obs), self.critic(obs)
         z = self.get_features(obs)
-        return self.actor(z), self.critic(z)
+        logits_cartes  = self.cap_cartes(z)   # (batch, 3)
+        logits_apostes = self.cap_apostes(z)  # (batch, 16)
+        logits = torch.cat([logits_cartes, logits_apostes], dim=-1)  # (batch, 19)
+        return logits, self.critic(z)
