@@ -13,47 +13,30 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
     """Crea una instància d'un model segons l'especificació donada."""
     if spec is None:
         spec = {"tipus": "ppo_mlp", "ruta": "best.pt"}
-        
+
     tipus = spec.get("tipus", "ppo_mlp")
 
     if tipus in ("huma", "default"):
         return None
 
-    if tipus == "nfsp":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_nfsp
-        return _crear_nfsp(spec, env_config)
-
-    if tipus == "dqn":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_dqn
-        return _crear_dqn(spec, env_config)
-        
-    if tipus == "numpy_dqn":
-        from RL.models.rlcard_legacy.numpy_agent import _crear_numpy_dqn
-        return _crear_numpy_dqn(spec, env_config)
-
     if tipus == "ppo_mlp":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
+        from RL.models.model_propi.ppo_loaders import _crear_ppo_mlp
         if not spec.get("ruta"):
             spec["ruta"] = "best.pt"
         return _crear_ppo_mlp(spec, env_config)
 
     if tipus == "ppo_gru":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_gru
+        from RL.models.model_propi.ppo_loaders import _crear_ppo_gru
         if not spec.get("ruta"):
             spec["ruta"] = "best.pt"
         return _crear_ppo_gru(spec, env_config)
 
     if tipus == "regles":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_env_temp, _RLCardModelAdapter
+        from RL.models.core.obs_adapter import crear_env_aplanat
+        from RL.models.rlcard_legacy.model_adapter import _RLCardModelAdapter
         from RL.models.model_propi.agent_regles import AgentRegles
-        env_wrapped = _crear_env_temp(env_config)
+        env_wrapped = crear_env_aplanat(env_config)
         agent = AgentRegles(num_actions=env_wrapped.num_actions, seed=spec.get("seed"))
         return _RLCardModelAdapter(agent, env_wrapped._extract_state)
-
-    # Si es "default", usem PPO MLP per defecte
-    if tipus == "default":
-        from RL.models.rlcard_legacy.adapters.rlcard_model import _crear_ppo_mlp
-        spec_def = {"tipus": "ppo_mlp", "ruta": "best.pt"}
-        return _crear_ppo_mlp(spec_def, env_config)
 
     return None

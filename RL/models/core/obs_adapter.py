@@ -1,13 +1,25 @@
 import numpy as np
-import os
 import types
-from pathlib import Path
+from typing import Any
+
+
+def crear_env_aplanat(env_config: dict[str, Any]):
+    """Crea un TrucEnv amb l'observació aplanada (233 dimensions)."""
+    from joc.entorn.env import TrucEnv
+    env = TrucEnv(
+        config={
+            "num_jugadors": env_config.get("num_jugadors", 2),
+            "cartes_jugador": env_config.get("cartes_jugador", 3),
+            "senyes": env_config.get("senyes", False),
+        }
+    )
+    return wrap_env_aplanat(env)
+
 
 def wrap_env_aplanat(env):
     """
-    Monkey-patch de l'entorn TrucEnv perquè el mètode `_extract_state` 
-    retorni una observació aplanada (233 dimensions), adequada per a 
-    models unificats que ja integren el Feature Extractor (COS).
+    Retorna una observació aplanada (233 dimensions), 
+    adequada per a models que integren el COS.
     """
     original_extract_state = env._extract_state
 
