@@ -44,8 +44,6 @@ class CosMultiInput(nn.Module):
         self.fusio = nn.Sequential(
             nn.Linear(dim_fusio, 256),
             nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
         )
 
     def forward(self, cartes: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
@@ -72,9 +70,9 @@ class ModelPreEntrenament(nn.Module):
     def __init__(self):
         super().__init__()
         self.cos = CosMultiInput()
-        self.cap_envido = nn.Linear(128, 1)
-        self.cap_accions_legals = nn.Linear(128, 19)
-        self.cap_forces = nn.Linear(128, 3)
+        self.cap_envido = nn.Linear(256, 1)
+        self.cap_accions_legals = nn.Linear(256, 19)
+        self.cap_forces = nn.Linear(256, 3)
 
     def forward(self, cartes: torch.Tensor, context: torch.Tensor):
         """

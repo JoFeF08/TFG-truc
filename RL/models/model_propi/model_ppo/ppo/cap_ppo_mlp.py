@@ -46,14 +46,10 @@ class PPOMlpNet(nn.Module):
             self.actor = nn.Sequential(
                 nn.Linear(LATENT_DIM, hidden_size),
                 nn.ReLU(),
-                nn.Linear(hidden_size, hidden_size),
-                nn.ReLU(),
                 nn.Linear(hidden_size, n_actions)
             )
             self.critic = nn.Sequential(
                 nn.Linear(LATENT_DIM, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, hidden_size),
                 nn.ReLU(),
                 nn.Linear(hidden_size, 1)
             )
