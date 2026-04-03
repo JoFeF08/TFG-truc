@@ -46,7 +46,7 @@ from joc.entorn.cartes_accions import ACTION_LIST
 from rlcard.agents import RandomAgent
 
 # Constants
-NUM_ENVS         = 48
+NUM_ENVS         = 96
 NUM_STEPS        = 256
 MINIBATCH_SIZE   = 1024
 UPDATE_EPOCHS    = 7
@@ -64,8 +64,8 @@ FINETUNE_LR_MLP  = 1e-4
 UNFREEZE_FRACTION = 0.15
 
 # Oponents
-PCT_RANDOM = 0.05
-PCT_REGLES = 0.65
+PCT_RANDOM = 0.1
+PCT_REGLES = 0.55
 
 # Avaluació
 EVAL_EVERY_STEPS  = 500_000
