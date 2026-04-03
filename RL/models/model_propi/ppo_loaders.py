@@ -43,7 +43,7 @@ def _crear_ppo_mlp(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucMode
     else:
         n_accions_model = env_wrapped.num_actions
 
-    net = PPOMlpNet(n_actions=n_accions_model, device=device)
+    net = PPOMlpNet(device=device)
     net.load_state_dict(checkpoint)
     agent = PPOMlpAgent(net, num_actions=n_accions_model, device=device)
 

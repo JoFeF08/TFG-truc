@@ -163,7 +163,7 @@ def main():
                 raise FileNotFoundError(f'Pre-entrenament completat però no s\'ha trobat: {cos_w}')
             print(f'[OK] Pesos pre-entrenats generats: {cos_w}\n')
 
-    net = PPOMlpNet(n_actions=N_ACTIONS, hidden_size=256, ruta_weights=cos_w, device=device, use_cos=use_cos)
+    net = PPOMlpNet(hidden_size=256, ruta_weights=cos_w, device=device, use_cos=use_cos)
 
     # Post-init segons mode
     if mode == 'no_cos':

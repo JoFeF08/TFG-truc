@@ -80,7 +80,7 @@ def main():
     
     n_accions = len(ACTION_LIST)
     cos_w = None if args.cos_weights == "none" else args.cos_weights
-    net = PPOMlpNet(n_actions=n_accions, hidden_size=256, ruta_weights=cos_w, device=device)
+    net = PPOMlpNet(hidden_size=256, ruta_weights=cos_w, device=device)
     
     if args.load_model and os.path.exists(args.load_model):
         net.load_state_dict(torch.load(args.load_model, map_location=device, weights_only=True))

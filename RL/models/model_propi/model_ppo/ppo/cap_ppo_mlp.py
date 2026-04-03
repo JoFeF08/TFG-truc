@@ -18,7 +18,7 @@ class PPOMlpNet(nn.Module):
     """
     Xarxa Actor-Critic base
     """
-    def __init__(self, n_actions, hidden_size=256, ruta_weights=None, device='cpu', use_cos=True):
+    def __init__(self, hidden_size=256, ruta_weights=None, device='cpu', use_cos=True):
         super().__init__()
         self.device = device
         self.use_cos = use_cos
@@ -45,39 +45,22 @@ class PPOMlpNet(nn.Module):
             obs_dim = SPLIT + OBS_CONTEXT_SIZE  # 239
             print(f"[PPOMlpNet] Mode sense COS: MLP directe ({obs_dim} → {hidden_size} → {hidden_size})")
 
-        if use_cos:
-            self.cap_cartes = nn.Sequential(
-                nn.Linear(LATENT_DIM, HEAD_SIZE),
-                nn.ReLU(),
-                nn.Linear(HEAD_SIZE, N_ACCIONS_CARTES)
-            )
-            self.cap_apostes = nn.Sequential(
-                nn.Linear(LATENT_DIM, HEAD_SIZE),
-                nn.ReLU(),
-                nn.Linear(HEAD_SIZE, N_ACCIONS_APOSTES)
-            )
-            self.critic = nn.Sequential(
-                nn.Linear(LATENT_DIM, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, 1)
-            )
-        else:
-            # Arquitectura equivalent a fase1: actor i critic independents sobre obs
-            obs_dim = SPLIT + OBS_CONTEXT_SIZE  # 239
-            self.actor = nn.Sequential(
-                nn.Linear(obs_dim, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, n_actions)
-            )
-            self.critic = nn.Sequential(
-                nn.Linear(obs_dim, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, 1)
-            )
+        input_dim = LATENT_DIM if use_cos else SPLIT + OBS_CONTEXT_SIZE
+        self.cap_cartes = nn.Sequential(
+            nn.Linear(input_dim, HEAD_SIZE),
+            nn.ReLU(),
+            nn.Linear(HEAD_SIZE, N_ACCIONS_CARTES)
+        )
+        self.cap_apostes = nn.Sequential(
+            nn.Linear(input_dim, HEAD_SIZE),
+            nn.ReLU(),
+            nn.Linear(HEAD_SIZE, N_ACCIONS_APOSTES)
+        )
+        self.critic = nn.Sequential(
+            nn.Linear(input_dim, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
 
         self.to(device)
 
@@ -132,15 +115,16 @@ class PPOMlpNet(nn.Module):
         ]
 
     def forward(self, obs):
-        if not self.use_cos:
+        if self.use_cos:
+            z = self.get_features(obs)
+        else:
             if not isinstance(obs, torch.Tensor):
                 obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
             elif obs.device != self.device:
                 obs = obs.to(self.device)
             if len(obs.shape) == 1:
                 obs = obs.unsqueeze(0)
-            return self.actor(obs), self.critic(obs)
-        z = self.get_features(obs)
+            z = obs
         logits_cartes  = self.cap_cartes(z)   # (batch, 3)
         logits_apostes = self.cap_apostes(z)  # (batch, 16)
         logits = torch.cat([logits_cartes, logits_apostes], dim=-1)  # (batch, 19)

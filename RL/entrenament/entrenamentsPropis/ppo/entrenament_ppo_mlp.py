@@ -72,7 +72,7 @@ def main():
     vec_env = SubprocVecEnv(NUM_ENVS, env_config)
     
     n_accions = len(ACTION_LIST)
-    net = PPOMlpNet(n_actions=n_accions, hidden_size=256, device=device)
+    net = PPOMlpNet(hidden_size=256, device=device)
     
     if args.load_model and os.path.exists(args.load_model):
         net.load_state_dict(torch.load(args.load_model, map_location=device, weights_only=True))
