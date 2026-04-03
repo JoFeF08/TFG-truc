@@ -10,7 +10,6 @@ SPLIT = OBS_CARTES_SHAPE[0] * OBS_CARTES_SHAPE[1] * OBS_CARTES_SHAPE[2] # 216
 OBS_CONTEXT_SIZE = 23
 N_ACCIONS_CARTES  = 3   # índexs 0-2: play_card_0/1/2
 N_ACCIONS_APOSTES = 16  # índexs 3-18: apostes, vull/fora, senyes
-HEAD_SIZE = 64
 
 COS_WEIGHTS_PATH = str(Path(__file__).resolve().parent.parent.parent.parent / "entrenament" / "entrenamentEstatTruc" / "registres" / "22_03_26_a_les_0118" / "models" / "best_pesos_cos_truc.pth")
 
@@ -47,14 +46,14 @@ class PPOMlpNet(nn.Module):
 
         input_dim = LATENT_DIM if use_cos else SPLIT + OBS_CONTEXT_SIZE
         self.cap_cartes = nn.Sequential(
-            nn.Linear(input_dim, HEAD_SIZE),
+            nn.Linear(input_dim, hidden_size),
             nn.ReLU(),
-            nn.Linear(HEAD_SIZE, N_ACCIONS_CARTES)
+            nn.Linear(hidden_size, N_ACCIONS_CARTES)
         )
         self.cap_apostes = nn.Sequential(
-            nn.Linear(input_dim, HEAD_SIZE),
+            nn.Linear(input_dim, hidden_size),
             nn.ReLU(),
-            nn.Linear(HEAD_SIZE, N_ACCIONS_APOSTES)
+            nn.Linear(hidden_size, N_ACCIONS_APOSTES)
         )
         self.critic = nn.Sequential(
             nn.Linear(input_dim, hidden_size),
