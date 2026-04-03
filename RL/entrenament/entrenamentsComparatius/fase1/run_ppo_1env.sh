@@ -2,7 +2,7 @@
 # run_ppo_1env.sh — Executa PPO amb 1 env
 
 TIMESTEPS=${1:-8000000}
-SCRIPT="RL/entrenament/entrenamentsComparatius/entrenament_comparatiu.py"
+SCRIPT="RL/entrenament/entrenamentsComparatius/fase1/entrenament_comparatiu.py"
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
 OUT_BASE="RL/notebooks/finals/1_comparacio_inicial/resultats_ppo_1env_${TIMESTAMP}"
 OUT_DIR="${OUT_BASE}/ppo"
