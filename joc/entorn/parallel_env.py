@@ -39,6 +39,8 @@ def worker(remote, parent_remote, env_config, seed):
                 done = (next_p_id is None)
 
                 if done:
+                    payoffs = env.game.get_payoffs()
+                    ri = [ri[j] + payoffs[j] for j in range(len(ri))]
                     next_s, next_p_id = env.reset()
 
                 env.action_recorder = []
