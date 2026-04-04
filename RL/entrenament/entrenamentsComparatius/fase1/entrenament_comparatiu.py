@@ -10,13 +10,12 @@ import io
 import shutil
 from pathlib import Path
 from datetime import datetime
-from copy import deepcopy
+from tqdm import trange
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from tqdm import trange, tqdm
+from tqdm import tqdm
 
 try:
     root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -27,12 +26,16 @@ except Exception:
 from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
 from rlcard.utils import set_seed
 
+from stable_baselines3.common.vec_env import SubprocVecEnv as SB3SubprocVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+
 from joc.entorn import TrucEnv
 from joc.entorn.cartes_accions import ACTION_LIST
+from joc.entorn.gym_env import TrucGymEnv
 
 from joc.entorn.parallel_env import SubprocVecEnv
-from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
-from RL.models.model_propi.model_ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
 from RL.models.model_propi.agent_regles import AgentRegles
 
 # Silenciar logs
@@ -107,44 +110,16 @@ NFSP_POLICY_SAMPLE_FREQ = 1_000
 
 
 
-# Xarxa simple Actor-Critic per a PPO
-def _build_mlp(in_dim, hidden, out_dim):
-    return nn.Sequential(
-        nn.Linear(in_dim, hidden), nn.ReLU(),
-        nn.Linear(hidden, hidden), nn.ReLU(),
-        nn.Linear(hidden, out_dim),
-    )
-
-
-class SimpleActorCritic(nn.Module):
-    def __init__(self, obs_dim=OBS_DIM, n_actions=N_ACTIONS, hidden=HIDDEN_SIZE):
-        super().__init__()
-        self.actor  = _build_mlp(obs_dim, hidden, n_actions)
-        self.critic = _build_mlp(obs_dim, hidden, 1)
-
-    def forward(self, obs):
-        if not isinstance(obs, torch.Tensor):
-            obs = torch.as_tensor(obs, dtype=torch.float32)
-        return self.actor(obs), self.critic(obs)
-
-
-class SimpleActorCriticAgent:
-    """Wrapper compatible amb eval_step() de TrucEnv.run()."""
+class SB3PPOEvalAgent:
+    """
+    Wrapper per fer un model MaskablePPO de SB3 compatible amb
+    l'interface eval_step() de RLCard (usada per evaluar_agent).
+    """
     use_raw = False
 
-    def __init__(self, net, n_actions, device):
-        self.net = net
+    def __init__(self, model, n_actions: int = N_ACTIONS):
+        self.model = model
         self.num_actions = n_actions
-        self.device = device
-
-    def get_action_and_value(self, obs, actions=None, masks=None):
-        logits, value = self.net(obs)
-        if masks is not None:
-            logits = logits.masked_fill(~masks, -1e9)
-        dist = torch.distributions.Categorical(logits=logits)
-        if actions is None:
-            actions = dist.sample()
-        return actions, dist.log_prob(actions), dist.entropy(), value.squeeze(-1)
 
     def eval_step(self, state):
         obs = state['obs']
@@ -154,16 +129,18 @@ class SimpleActorCriticAgent:
             ).astype(np.float32)
         else:
             obs_flat = np.asarray(obs, dtype=np.float32)
+
         legal = list(state['legal_actions'].keys())
-        self.net.eval()
-        with torch.no_grad():
-            t = torch.as_tensor(obs_flat, device=self.device).unsqueeze(0)
-            logits, _ = self.net(t)
-            mask = torch.zeros(logits.shape[-1], dtype=torch.bool, device=self.device)
-            mask[legal] = True
-            logits[0][~mask] = -1e9
-            action = torch.argmax(logits, dim=-1).item()
-        return action, {}
+        mask = np.zeros(self.num_actions, dtype=bool)
+        mask[legal] = True
+
+        # predict() necessita dimensió de batch: (1, obs_dim) i (1, n_actions)
+        action, _ = self.model.predict(
+            obs_flat[np.newaxis],
+            action_masks=mask[np.newaxis],
+            deterministic=True,
+        )
+        return int(action[0]), {}
 
 
 
@@ -617,195 +594,131 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
     print(f'[NFSP] Entrenament complet. Millor metric: {best_metric:.2f}%')
 
 
-# PPO
-def _extract_obs_ppo(states_list):
-    """Retorna (obs_tensor, masks_tensor) per al batch de NUM_ENVS estats."""
-    obs_list, mask_list = [], []
-    for s in states_list:
-        obs_list.append(flatten_obs(s))
-        mask = np.zeros(N_ACTIONS, dtype=bool)
-        legal = list(s['legal_actions'].keys()) if hasattr(s['legal_actions'], 'keys') else s['legal_actions']
-        mask[legal] = True
-        mask_list.append(mask)
-    return (
-        torch.tensor(np.array(obs_list), dtype=torch.float32),
-        torch.tensor(np.array(mask_list), dtype=torch.bool),
-    )
-
-
-# PPO
+# PPO (Stable-Baselines3 MaskablePPO)
 def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
+    """
+    Entrenament PPO usant MaskablePPO de sb3_contrib.
+
+    Es creen NUM_ENVS_PPO entorns Gymnasium (TrucGymEnv) amb ActionMasker,
+    alternant la posició de l'agent aprenent (learner_pid 0/1) i amb la
+    distribució d'oponents: 5% Random, 95% AgentRegles.
+    El self-play s'implementa alternant learner_pid perquè el model aprengui
+    les dues posicions simultàniament.
+    """
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
     num_envs = num_envs_override or NUM_ENVS_PPO
-    num_steps = min(NUM_STEPS * NUM_ENVS_PPO // num_envs, 2048)
+    n_steps = min(NUM_STEPS * NUM_ENVS_PPO // num_envs, 2048)
     eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
-    ppo_minibatch = min(PPO_MINIBATCH, num_envs * num_steps)
-    net   = SimpleActorCritic(OBS_DIM, N_ACTIONS, HIDDEN_SIZE).to(device)
-    agent = SimpleActorCriticAgent(net, N_ACTIONS, device)
+    batch_size = min(PPO_MINIBATCH, num_envs * n_steps)
 
-    optimizer = optim.Adam(net.parameters(), lr=PPO_LR, eps=1e-5)
-    buffer    = RolloutBuffer(num_steps, num_envs, OBS_DIM, action_dim=N_ACTIONS, device=device)
+    n_random = max(1, int(num_envs * PCT_RANDOM))
 
-    rand_opp    = RandomAgent(num_actions=N_ACTIONS)
-    regles_opp  = AgentRegles(num_actions=N_ACTIONS, seed=456)
+    # Factories d'entorns Gymnasium amb ActionMasker per a MaskablePPO.
+    # - n_random entorns amb Random opponent
+    # - resta amb AgentRegles opponent
+    # - learner_pid alterna per aprendre les dues posicions (self-play implícit)
+    def _make_env_fn(opponent_type: str, learner_pid: int, seed: int):
+        def _init():
+            import sys, os
+            sys.path.insert(0, os.path.abspath(
+                os.path.join(os.path.dirname(__file__), '..', '..', '..')
+            ))
+            from joc.entorn.gym_env import TrucGymEnv
+            from sb3_contrib.common.wrappers import ActionMasker
+            from rlcard.agents import RandomAgent as _RandomAgent
+            from RL.models.model_propi.agent_regles import AgentRegles as _AgentRegles
+
+            cfg = ENV_CONFIG.copy()
+            cfg['seed'] = seed
+            if opponent_type == 'random':
+                opp = _RandomAgent(num_actions=N_ACTIONS)
+            else:
+                opp = _AgentRegles(num_actions=N_ACTIONS, seed=seed + 1000)
+            env = TrucGymEnv(cfg, opponent=opp, learner_pid=learner_pid)
+            return ActionMasker(env, lambda e: e.action_masks())
+        return _init
+
+    env_fns = []
+    for i in range(num_envs):
+        opp_type = 'random' if i < n_random else 'regles'
+        learner_pid = i % 2  # alterna posició aprenent
+        env_fns.append(_make_env_fn(opp_type, learner_pid, SEED + i))
+
+    vec_env = SB3SubprocVecEnv(env_fns)
+
+    # Arquitectura de la política: 2 capes ocultes [256, 256] per a actor i crític
+    policy_kwargs = dict(
+        net_arch=dict(pi=HIDDEN_LAYERS, vf=HIDDEN_LAYERS),
+        activation_fn=nn.ReLU,
+    )
+
+    model = MaskablePPO(
+        'MlpPolicy',
+        vec_env,
+        learning_rate=PPO_LR,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=PPO_EPOCHS,
+        gamma=PPO_GAMMA,
+        gae_lambda=PPO_GAE_LAMBDA,
+        clip_range=PPO_CLIP,
+        ent_coef=PPO_ENT,
+        vf_coef=PPO_VF,
+        max_grad_norm=0.5,
+        policy_kwargs=policy_kwargs,
+        verbose=0,
+        device=device,
+    )
+
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
-
-    opp_map = build_opponent_map(num_envs)
-    if num_envs == 1:
-        cfg = ENV_CONFIG.copy()
-        cfg['seed'] = ENV_CONFIG.get('seed', SEED)
-        env_single = TrucEnv(cfg)
-        state0, pid0 = env_single.reset()
-        results = [(state0, pid0)]
-    else:
-        vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
-        results = vec_env.reset_all()
-    current_states = [r[0] for r in results]
-
-    num_updates = total_timesteps // (num_envs * num_steps)
-    global_step = 0
-    games_played = 0
-    best_metric  = -1.0
+    best_metric = [-1.0]  # mutable per al callback
     t0 = time.time()
-    pg_loss_val = v_loss_val = ent_loss_val = 0.0
-    wr_g = 0.0
 
-    pbar = trange(1, num_updates + 1, desc='PPO')
-    for update in pbar:
-        buffer.step = 0  # reset buffer pointer
-        for step in range(num_steps):
-            global_step += num_envs
+    class _EvalLogCallback(BaseCallback):
+        """Avalua el model cada eval_every passos i registra mètriques al CSV."""
 
-            obs_t, masks_t = _extract_obs_ppo(current_states)
-            obs_t   = obs_t.to(device)
-            masks_t = masks_t.to(device)
+        def __init__(self):
+            super().__init__(verbose=0)
+            self._last_eval = 0
 
-            active_players = [s['raw_obs']['id_jugador'] for s in current_states]
-            is_learning = torch.ones(num_envs, device=device)
+        def _on_step(self) -> bool:
+            if self.num_timesteps - self._last_eval >= eval_every:
+                self._last_eval = self.num_timesteps
+                eval_agent = SB3PPOEvalAgent(self.model)
+                wr_r, wr_g, metric = evaluar_agent(eval_agent, ENV_CONFIG, regles_eval)
+                elapsed = time.time() - t0
+                # loss no disponible directament; usem ep_rew_mean si existeix
+                ep_rew = (self.locals.get('infos') or [{}])[0].get('episode', {}).get('r', None)
+                append_log(log_path, self.num_timesteps, 0, ep_rew,
+                           wr_r, wr_g, metric, elapsed)
+                if metric > best_metric[0]:
+                    best_metric[0] = metric
+                    self.model.save(str(save_dir / 'best'))
+                    print(f'[PPO step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
+                else:
+                    print(f'[PPO step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}%')
+            return True
 
-            net.eval()
-            with torch.no_grad():
-                logits, value = net(obs_t)
-                logits = logits.masked_fill(~masks_t, -1e9)
-                dist   = torch.distributions.Categorical(logits=logits)
-                action = dist.sample()
-                logprob = dist.log_prob(action)
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=_EvalLogCallback(),
+        progress_bar=True,
+    )
 
-            # Sobreescriure accions pels oponents fixos
-            for i, opp in opp_map.items():
-                if active_players[i] == opp['pid']:
-                    if opp['type'] == 'random':
-                        a, _ = rand_opp.eval_step(current_states[i])
-                        action[i] = a
-                        is_learning[i] = 0.0
-                    elif opp['type'] == 'regles':
-                        a, _ = regles_opp.eval_step(current_states[i])
-                        action[i] = a
-                        is_learning[i] = 0.0
-                    # selfplay: el learner actua (no sobreescribim)
+    vec_env.close()
 
-            actions_np = action.cpu().numpy()
-            if num_envs == 1:
-                next_s, next_p_id = env_single.step(int(actions_np[0]))
-                raw = next_s['raw_obs']
-                ri = raw.get('reward_intermedis', [0.0, 0.0])
-                done = (next_p_id is None)
-                if done:
-                    next_s, next_p_id = env_single.reset()
-                env_single.action_recorder = []
-                next_states_players = [(next_s, next_p_id)]
-                rewards_list = [ri]
-                dones_list = [done]
-            else:
-                next_states_players, rewards_list, dones_list = vec_env.step(actions_np)
-
-            step_rewards = []
-            for i in range(num_envs):
-                if dones_list[i]:
-                    games_played += 1
-                step_rewards.append(rewards_list[i][active_players[i]])
-
-            rewards_t = torch.tensor(step_rewards, dtype=torch.float32, device=device)
-            dones_t   = torch.tensor(dones_list, dtype=torch.float32, device=device)
-
-            buffer.add(obs_t, action, logprob, rewards_t, value.squeeze(-1),
-                       dones_t, masks_t, is_learning)
-
-            current_states = [sp[0] for sp in next_states_players]
-
-        # PPO update
-        obs_last_t, _ = _extract_obs_ppo(current_states)
-        obs_last_t = obs_last_t.to(device)
-        net.eval()
-        with torch.no_grad():
-            _, last_value = net(obs_last_t)
-            last_value = last_value.squeeze(-1)
-
-        advantages, returns = calcular_gae(
-            buffer.rewards, buffer.values, buffer.dones,
-            last_value, torch.zeros_like(last_value),
-            PPO_GAMMA, PPO_GAE_LAMBDA,
-        )
-
-        b_obs, b_act, b_lp, b_adv, b_ret, b_masks, b_il = buffer.get(advantages, returns)
-        b_inds = np.arange(num_envs * num_steps)
-
-        net.train()
-        for _ in range(PPO_EPOCHS):
-            np.random.shuffle(b_inds)
-            for start in range(0, num_envs * num_steps, ppo_minibatch):
-                mb = b_inds[start:start + ppo_minibatch]
-                loss, pg_loss, v_loss, ent_loss = calcular_perdua_ppo(
-                    agent, b_obs[mb], b_act[mb], b_lp[mb],
-                    b_adv[mb], b_ret[mb], b_masks[mb],
-                    is_learning=b_il[mb],
-                    coef_retall=PPO_CLIP, coef_ent=PPO_ENT, coef_v=PPO_VF,
-                )
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(net.parameters(), 0.5)
-                optimizer.step()
-
-        pg_loss_val  = pg_loss.item()
-        v_loss_val   = v_loss.item()
-        ent_loss_val = ent_loss.item()
-        last_loss    = pg_loss_val
-
-        # Avaluació
-        if global_step % eval_every < (num_envs * num_steps):
-            wr_r, wr_g, metric = evaluar_agent(agent, ENV_CONFIG, regles_eval)
-            elapsed = time.time() - t0
-            append_log(log_path, global_step, games_played, pg_loss_val,
-                       wr_r, wr_g, metric, elapsed)
-            if metric > best_metric:
-                best_metric = metric
-                torch.save(net.state_dict(), save_dir / 'best.pt')
-                tqdm.write(f'[PPO step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
-            else:
-                tqdm.write(f'[PPO step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}%')
-
-        pbar.set_postfix({
-            'step': global_step,
-            'pg': f'{pg_loss_val:.3f}',
-            'v': f'{v_loss_val:.3f}',
-            'WR_g': f'{wr_g:.1f}%',
-        })
-
-        if update % 100 == 0:
-            torch.cuda.empty_cache()
-
-    if num_envs > 1:
-        vec_env.close()
-    best = save_dir / 'best.pt'
-    if best.exists():
-        shutil.copy2(best, save_dir / 'final.pt')
-    else:
-        torch.save(net.state_dict(), save_dir / 'final.pt')
-    print(f'[PPO] Entrenament complet. Millor metric: {best_metric:.2f}%')
+    # Guardar model final
+    model.save(str(save_dir / 'final'))
+    best_path = save_dir / 'best.zip'
+    if not best_path.exists():
+        model.save(str(save_dir / 'best'))
+    print(f'[PPO SB3] Entrenament complet. Millor metric: {best_metric[0]:.2f}%')
 
 
 def main():
