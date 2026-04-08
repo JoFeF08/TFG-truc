@@ -1,2 +1,7 @@
 rlcard
 torch
+
+stable-baselines3
+gymnasium
+
+tqdm

@@ -1,3 +1,21 @@
+"""
+Script d'entrenament comparatiu (Fase 1)
+-----------------------------------------
+Cada algorisme s'entrena amb les tècniques que millor s'adapten a la seva naturalesa.
+
+  DQN RLCard  → off-policy, loop seqüencial sobre TrucEnv, replay buffer gran + Polyak self-play
+  NFSP RLCard → off-policy + imitació, loop seqüencial, reservoir buffer + self-play natiu
+  DQN SB3     → off-policy, TrucGymEnv + SB3, replica del DQN però amb implementació SB3
+  PPO SB3     → on-policy, 48 TrucGymEnv paral·lels via SB3SubprocVecEnv
+
+El nexe comú que permet la comparació:
+  - evaluar_agent()  → mateixa funció per als quatre (vs Random + vs AgentRegles)
+  - training_log.csv → format idèntic: step, games_played, loss, wr_random, wr_regles, metric, elapsed_s
+  - metric = 0.25 * wr_random + 0.75 * wr_regles
+  - Mateixa arquitectura de xarxa [256, 256] per a tots
+  - Mateixa dimensió d'observació (calculada dinàmicament)
+"""
+
 import sys
 import os
 import argparse
@@ -10,13 +28,12 @@ import io
 import shutil
 from pathlib import Path
 from datetime import datetime
-from copy import deepcopy
+from tqdm import trange
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from tqdm import trange, tqdm
+from tqdm import tqdm
 
 try:
     root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
@@ -27,72 +44,66 @@ except Exception:
 from rlcard.agents import DQNAgent, NFSPAgent, RandomAgent
 from rlcard.utils import set_seed
 
+from stable_baselines3.common.vec_env import SubprocVecEnv as SB3SubprocVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3 import PPO, DQN as SB3DQN
+
 from joc.entorn import TrucEnv
 from joc.entorn.cartes_accions import ACTION_LIST
+from joc.entorn.gym_env import TrucGymEnv
 
-from joc.entorn.parallel_env import SubprocVecEnv
-from RL.entrenament.entrenamentsPropis.ppo.buffers_ppo import RolloutBuffer
-from RL.models.model_propi.model_ppo.ppo_loss import calcular_gae, calcular_perdua_ppo
 from RL.models.model_propi.agent_regles import AgentRegles
 
-# Silenciar logs
+# Silenciar logs de llibreries externes
 logging.basicConfig(level=logging.ERROR, force=True)
 logging.getLogger().setLevel(logging.ERROR)
 
-# Constants generals
-TOTAL_TIMESTEPS  = 24_000_000
-NUM_STEPS        = 256
-OBS_DIM          = 216 + 23
-N_ACTIONS        = len(ACTION_LIST)
-HIDDEN_SIZE      = 256
-HIDDEN_LAYERS    = [256, 256]
-SEED             = 42
+# Constants compartides
+TOTAL_TIMESTEPS = 24_000_000
+SEED            = 42
 
-# Parallelisme per algorisme
-# PPO (on-policy): prefereix gran throughput
-NUM_ENVS_PPO     = 48
-# DQN/NFSP (off-policy): necessiten profunditat temporal
-NUM_ENVS_DQN     = 16
-NUM_ENVS_NFSP    = 16
+# Càlcul dinàmic obs
+_tmp_env  = TrucEnv({'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 24, 'seed': SEED})
+_dummy_st, _ = _tmp_env.reset()
+OBS_DIM   = np.concatenate(
+    [_dummy_st['obs']['obs_cartes'].flatten(), _dummy_st['obs']['obs_context']], axis=0
+).shape[0]
 
+N_ACTIONS     = len(ACTION_LIST)
+HIDDEN_LAYERS = [256, 256]   # igual per als quatre algorismes
+
+ENV_CONFIG = {
+    'num_jugadors':    2,
+    'cartes_jugador':  3,
+    'puntuacio_final': 24,
+    'seed':            SEED,
+    'verbose':         False,
+}
+
+# Param avaluació 
 EVAL_EVERY_STEPS  = 500_000
 EVAL_GAMES_RANDOM = 50
 EVAL_GAMES_REGLES = 100
 
-ENV_CONFIG = {
-    'num_jugadors': 2,
-    'cartes_jugador': 3,
-    'puntuacio_final': 24,
-    'seed': SEED,
-    'verbose': False,
-}
+# DQN RLCard (off-policy)
+DQN_LR          = 1e-4
+DQN_BATCH       = 512
+DQN_MEMORY      = 2_000_000
+DQN_WARMUP      = 100_000
+DQN_TRAIN_EVERY = 128
+DQN_UPDATE_TGT  = 2_000
+DQN_EPS_MIN     = 0.05
+DQN_POLYAK_TAU  = 0.05
+DQN_POLYAK_FREQ = 5_000
 
 # Distribució d'oponents
-PCT_RANDOM = 0.05
-PCT_REGLES = 0.65
+DQN_PCT_RANDOM  = 0.10
+DQN_PCT_REGLES  = 0.60
+# restant ~30% → self-play Polyak
 
-# Hiperparàmetres PPO
-PPO_LR          = 3e-4
-PPO_GAMMA       = 0.995
-PPO_GAE_LAMBDA  = 0.95
-PPO_CLIP        = 0.2
-PPO_ENT         = 0.01
-PPO_VF          = 0.5
-PPO_EPOCHS      = 7
-PPO_MINIBATCH   = 1024
 
-# Hiperparàmetres DQN
-DQN_LR           = 1e-4
-DQN_BATCH        = 512
-DQN_MEMORY       = 2_000_000
-DQN_WARMUP       = 100_000
-DQN_TRAIN_EVERY  = 128
-DQN_UPDATE_TGT   = 2_000
-DQN_EPS_MIN      = 0.05
-DQN_POLYAK_TAU   = 0.05
-DQN_POLYAK_FREQ  = 5_000
 
-# Hiperparàmetres NFSP
+# NFSP RLCard (off-policy + imitació)
 NFSP_RL_LR         = 1e-4
 NFSP_SL_LR         = 1e-4
 NFSP_BATCH         = 512
@@ -103,48 +114,53 @@ NFSP_Q_UPDATE      = 2_000
 NFSP_WARMUP        = 100_000
 NFSP_ETA           = 0.25
 NFSP_EPS_MIN       = 0.05
-NFSP_POLICY_SAMPLE_FREQ = 1_000
+
+# Distribució d'oponents per NFSP
+NFSP_PCT_RANDOM    = 0.10
+NFSP_PCT_REGLES    = 0.60
+# restant → self-play NFSP natiu
 
 
 
-# Xarxa simple Actor-Critic per a PPO
-def _build_mlp(in_dim, hidden, out_dim):
-    return nn.Sequential(
-        nn.Linear(in_dim, hidden), nn.ReLU(),
-        nn.Linear(hidden, hidden), nn.ReLU(),
-        nn.Linear(hidden, out_dim),
-    )
+# DQN SB3 (off-policy, TrucGymEnv)
+SB3DQN_LR            = 1e-4
+SB3DQN_BATCH         = 512
+SB3DQN_MEMORY        = 2_000_000
+SB3DQN_WARMUP        = 100_000
+SB3DQN_TRAIN_FREQ    = 4        # actualitza cada 4 steps
+SB3DQN_TARGET_UPDATE = 2_000
+SB3DQN_EPS_START     = 1.0
+SB3DQN_EPS_END       = 0.05
+SB3DQN_EPS_FRACTION  = 0.8      # fracció de timesteps per al decay
+SB3DQN_GAMMA         = 0.99
+
+# PPO (on-policy, SB3)
+NUM_ENVS_PPO    = 48
+
+PPO_LR          = 3e-4
+PPO_GAMMA       = 0.995
+PPO_GAE_LAMBDA  = 0.95
+PPO_CLIP        = 0.2
+PPO_ENT         = 0.01
+PPO_VF          = 0.5
+PPO_EPOCHS      = 7
+PPO_MINIBATCH   = 1024
+PPO_N_STEPS     = 256
+
+PPO_PCT_RANDOM  = 0.05
 
 
-class SimpleActorCritic(nn.Module):
-    def __init__(self, obs_dim=OBS_DIM, n_actions=N_ACTIONS, hidden=HIDDEN_SIZE):
-        super().__init__()
-        self.actor  = _build_mlp(obs_dim, hidden, n_actions)
-        self.critic = _build_mlp(obs_dim, hidden, 1)
-
-    def forward(self, obs):
-        if not isinstance(obs, torch.Tensor):
-            obs = torch.as_tensor(obs, dtype=torch.float32)
-        return self.actor(obs), self.critic(obs)
-
-
-class SimpleActorCriticAgent:
-    """Wrapper compatible amb eval_step() de TrucEnv.run()."""
+# Adaptador SB3
+class SB3EvalAgent:
+    """
+    Adapta qualsevol model SB3 (PPO, DQN) a la interfície eval_step()
+    que usa evaluar_agent() per avaluar qualsevol agent de forma uniforme.
+    """
     use_raw = False
 
-    def __init__(self, net, n_actions, device):
-        self.net = net
+    def __init__(self, model, n_actions: int = N_ACTIONS):
+        self.model       = model
         self.num_actions = n_actions
-        self.device = device
-
-    def get_action_and_value(self, obs, actions=None, masks=None):
-        logits, value = self.net(obs)
-        if masks is not None:
-            logits = logits.masked_fill(~masks, -1e9)
-        dist = torch.distributions.Categorical(logits=logits)
-        if actions is None:
-            actions = dist.sample()
-        return actions, dist.log_prob(actions), dist.entropy(), value.squeeze(-1)
 
     def eval_step(self, state):
         obs = state['obs']
@@ -154,22 +170,12 @@ class SimpleActorCriticAgent:
             ).astype(np.float32)
         else:
             obs_flat = np.asarray(obs, dtype=np.float32)
-        legal = list(state['legal_actions'].keys())
-        self.net.eval()
-        with torch.no_grad():
-            t = torch.as_tensor(obs_flat, device=self.device).unsqueeze(0)
-            logits, _ = self.net(t)
-            mask = torch.zeros(logits.shape[-1], dtype=torch.bool, device=self.device)
-            mask[legal] = True
-            logits[0][~mask] = -1e9
-            action = torch.argmax(logits, dim=-1).item()
-        return action, {}
+
+        action, _ = self.model.predict(obs_flat[np.newaxis], deterministic=True)
+        return int(action[0]), {}
 
 
-
-# Funcions compartides
-def flatten_obs(state):
-    """Aplana l'observació dict→array (239 dims)."""
+def flatten_obs(state) -> np.ndarray:
     obs = state['obs']
     if isinstance(obs, dict):
         return np.concatenate(
@@ -178,17 +184,15 @@ def flatten_obs(state):
     return np.asarray(obs, dtype=np.float32)
 
 
-def make_flat_state(state):
-    """Retorna un dict amb 'obs' pla + 'legal_actions' + 'raw_obs' originals."""
+def make_flat_state(state) -> dict:
     return {
-        'obs': flatten_obs(state),
+        'obs':           flatten_obs(state),
         'legal_actions': state['legal_actions'],
-        'raw_obs': state.get('raw_obs', {}),
+        'raw_obs':       state.get('raw_obs', {}),
     }
 
 
 def wrap_env_aplanat(env):
-    """Posa un monkey-patch a TrucEnv perquè retorni obs planes (per agents RLCard)."""
     original = env._extract_state
 
     def _extract_patched(self, state):
@@ -204,54 +208,48 @@ def wrap_env_aplanat(env):
     return env
 
 
-def build_opponent_map(num_envs):
-    """Retorna un dict {env_idx: {'type': str, 'pid': int}} per als entorns."""
-    opp_map = {}
-    n_random = max(1, int(num_envs * PCT_RANDOM))
-    n_regles = int(num_envs * PCT_REGLES)
-    for i in range(num_envs):
-        if i < n_random:
-            opp_map[i] = {'type': 'random', 'pid': i % 2}
-        elif i < n_random + n_regles:
-            opp_map[i] = {'type': 'regles', 'pid': i % 2}
-        else:
-            opp_map[i] = {'type': 'selfplay', 'pid': i % 2}
-    return opp_map
+def _pick_opponent(rng, rand_opp, regles_opp, polyak_agent, pct_random, pct_regles):
+    """Tria l'agent oponent per a un episodi basat en les probabilitats configurades."""
+    r = rng.random()
+    if r < pct_random:
+        return rand_opp, 'random'
+    elif r < pct_random + pct_regles:
+        return regles_opp, 'regles'
+    else:
+        return polyak_agent, 'selfplay'
 
 
-def evaluar_agent(agent, env_config, regles_agent,
-                  n_random=EVAL_GAMES_RANDOM, n_regles=EVAL_GAMES_REGLES):
+# avaluació comú
+def evaluar_agent(agent, env_config: dict, regles_agent,
+                  n_random: int = EVAL_GAMES_RANDOM,
+                  n_regles: int = EVAL_GAMES_REGLES):
     """
-    Avalua l'agent contra Random i AgentRegles.
-    Retorna (wr_random%, wr_regles%, metric).
-    Funciona per DQNAgent, NFSPAgent i SimpleActorCriticAgent (tots tenen eval_step).
+    Avalua qualsevol agent que implementi eval_step()
+    (DQNAgent, NFSPAgent, SB3EvalAgent) contra RandomAgent i AgentRegles.
+
+    Retorna: (wr_random%, wr_regles%, metric)
+    metric = 0.25 * wr_random + 0.75 * wr_regles
     """
     eval_env = wrap_env_aplanat(TrucEnv(env_config))
-
-    # vs Random
     rand_opp = RandomAgent(num_actions=N_ACTIONS)
+
     wins_r = 0
     for i in range(n_random):
         if i % 2 == 0:
-            eval_env.set_agents([agent, rand_opp])
-            pid = 0
+            eval_env.set_agents([agent, rand_opp]); pid = 0
         else:
-            eval_env.set_agents([rand_opp, agent])
-            pid = 1
+            eval_env.set_agents([rand_opp, agent]); pid = 1
         _, payoffs = eval_env.run(is_training=False)
         if payoffs[pid] > 0:
             wins_r += 1
     wr_random = 100.0 * wins_r / n_random
 
-    # vs AgentRegles
     wins_g = 0
     for i in range(n_regles):
         if i % 2 == 0:
-            eval_env.set_agents([agent, regles_agent])
-            pid = 0
+            eval_env.set_agents([agent, regles_agent]); pid = 0
         else:
-            eval_env.set_agents([regles_agent, agent])
-            pid = 1
+            eval_env.set_agents([regles_agent, agent]); pid = 1
         _, payoffs = eval_env.run(is_training=False)
         if payoffs[pid] > 0:
             wins_g += 1
@@ -261,6 +259,7 @@ def evaluar_agent(agent, env_config, regles_agent,
     return wr_random, wr_regles, metric
 
 
+# loggs
 def init_log(log_path):
     with open(log_path, 'w', newline='') as f:
         csv.writer(f).writerow([
@@ -277,30 +276,39 @@ def append_log(log_path, step, games, loss, wr_r, wr_g, metric, elapsed):
         ])
 
 
-"""
-Entrenament Comparatiu: DQN / NFSP / PPO
-=========================================
-Tots tres algorismes amb condicions idèntiques:
-  - Observació plana de 239 dims (sense COS), des de zero (scratch)
-  - Xarxa [256, 256] hidden layers per a tots
-  - 48 entorns paral·lels (SubprocVecEnv)
-  - Mateixa distribució d'oponents: 5% Random, 65% AgentRegles, 30% Self-play
-  - Mateixa avaluació: win rate vs Random + vs AgentRegles
-  - 24M timesteps totals
-"""
+# entorn gym
+def _make_gym_env_fn(opponent_type: str, learner_pid: int, seed: int):
+    """Retorna una funció factory per SB3SubprocVecEnv / Monitor."""
+    def _init():
+        import sys, os
+        sys.path.insert(0, os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', '..', '..')
+        ))
+        from joc.entorn.gym_env import TrucGymEnv
+        from rlcard.agents import RandomAgent as _RandomAgent
+        from RL.models.model_propi.agent_regles import AgentRegles as _AgentRegles
 
-# DQN
-def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
+        cfg = ENV_CONFIG.copy()
+        cfg['seed'] = seed
+        opp = _RandomAgent(num_actions=N_ACTIONS) if opponent_type == 'random' \
+            else _AgentRegles(num_actions=N_ACTIONS, seed=seed + 1000)
+        return TrucGymEnv(cfg, opponent=opp, learner_pid=learner_pid)
+    return _init
+
+
+# DQN RLCard
+def run_dqn(save_dir, total_timesteps, device):
+    """
+    DQN de RLCard sobre un sol TrucEnv seqüencial.
+    El replay buffer gran garanteix diversitat de mostres sense paral·lelisme.
+    Oponent per episodi: 10% Random, 60% AgentRegles, 30% self-play Polyak.
+    """
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = num_envs_override or NUM_ENVS_DQN
-    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
-    memory_size = min(DQN_MEMORY, 500_000) if num_envs <= 4 else DQN_MEMORY
-    warmup = min(DQN_WARMUP, memory_size // 10)
 
     dqn = DQNAgent(
         num_actions=N_ACTIONS,
@@ -308,8 +316,8 @@ def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
         mlp_layers=HIDDEN_LAYERS,
         learning_rate=DQN_LR,
         batch_size=DQN_BATCH,
-        replay_memory_size=memory_size,
-        replay_memory_init_size=warmup,
+        replay_memory_size=DQN_MEMORY,
+        replay_memory_init_size=DQN_WARMUP,
         update_target_estimator_every=DQN_UPDATE_TGT,
         epsilon_decay_steps=eps_decay,
         epsilon_end=DQN_EPS_MIN,
@@ -317,7 +325,7 @@ def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
         device=device,
     )
 
-    # Oponent self-play: còpia Polyak del DQN principal
+    # Oponent self-play Polyak
     dqn_polyak = DQNAgent(
         num_actions=N_ACTIONS,
         state_shape=OBS_DIM,
@@ -332,130 +340,90 @@ def run_dqn(save_dir, total_timesteps, device, num_envs_override=None):
         train_every=99999,
         device=device,
     )
-    # Copiem pesos inicials
     dqn_polyak.q_estimator.qnet.load_state_dict(dqn.q_estimator.qnet.state_dict())
 
-    rand_opp   = RandomAgent(num_actions=N_ACTIONS)
-    regles_opp = AgentRegles(num_actions=N_ACTIONS, seed=456)
+    rand_opp    = RandomAgent(num_actions=N_ACTIONS)
+    regles_opp  = AgentRegles(num_actions=N_ACTIONS, seed=456)
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
+    rng         = np.random.default_rng(SEED)
 
-    opp_map = build_opponent_map(num_envs)
-    vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
-
-    results = vec_env.reset_all()
-    current_states = [r[0] for r in results]
-
-    num_updates = total_timesteps // (num_envs * NUM_STEPS)
-    global_step = 0
+    env          = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
+    eval_every   = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    global_step  = 0
     games_played = 0
-    best_metric = -1.0
-    t0 = time.time()
-    last_loss = None
+    best_metric  = -1.0
+    wr_r = wr_g  = 0.0
+    t0           = time.time()
+    devnull      = io.StringIO()
 
-    # Transició pendent de p0 per a cada env (persistent entre steps)
-    last_p0_sa = [None] * num_envs
+    pbar = trange(total_timesteps, desc='DQN-RLCard')
+    while global_step < total_timesteps:
+        # Triar oponent per a aquest episodi
+        opp, opp_type = _pick_opponent(rng, rand_opp, regles_opp, dqn_polyak,
+                                       DQN_PCT_RANDOM, DQN_PCT_REGLES)
+        learner_pid = rng.integers(0, 2)   # alterna posició
 
-    pbar = trange(1, num_updates + 1, desc='DQN')
-    for update in pbar:
-        for step in range(NUM_STEPS):
-            global_step += num_envs
+        if learner_pid == 0:
+            env.set_agents([dqn, opp])
+        else:
+            env.set_agents([opp, dqn])
 
-            actions = np.zeros(num_envs, dtype=np.int32)
-            prev_flat = [None] * num_envs
-            is_learning = np.zeros(num_envs, dtype=bool)
+        trajectories, _ = env.run(is_training=True)
+        learner_traj    = trajectories[learner_pid]
 
-            for i in range(num_envs):
-                s = current_states[i]
-                active_pid = s['raw_obs']['id_jugador']
-                opp = opp_map[i]
-                learner_pid = 1 - opp['pid']
+        for ts in learner_traj:
+            global_step += 1
+            pbar.update(1)
+            with contextlib.redirect_stdout(devnull):
+                dqn.feed(ts)
 
-                if active_pid == learner_pid:
-                    flat = make_flat_state(s)
-                    prev_flat[i] = flat
-                    actions[i] = dqn.step(flat)
-                    is_learning[i] = True
-                else:
-                    if opp['type'] == 'random':
-                        actions[i], _ = rand_opp.eval_step(s)
-                    elif opp['type'] == 'regles':
-                        actions[i], _ = regles_opp.eval_step(s)
-                    else:
-                        flat = make_flat_state(s)
-                        actions[i] = dqn_polyak.step(flat)
+        games_played += 1
 
-            next_states_players, rewards_list, dones_list = vec_env.step(actions)
-
-            devnull = io.StringIO()
-            for i in range(num_envs):
-                opp = opp_map[i]
-                learner_pid = 1 - opp['pid']
-                flat_next = make_flat_state(next_states_players[i][0])
-                reward_p0 = rewards_list[i][learner_pid]
-                done = dones_list[i]
-
-                if done:
-                    games_played += 1
-                    # Joc acabat en torn de l'oponent → completar la transició pendent de p0
-                    if not is_learning[i] and last_p0_sa[i] is not None:
-                        prev_obs, prev_act = last_p0_sa[i]
-                        with contextlib.redirect_stdout(devnull):
-                            dqn.feed((prev_obs, prev_act, reward_p0, flat_next, True))
-                    last_p0_sa[i] = None
-
-                if is_learning[i]:
-                    with contextlib.redirect_stdout(devnull):
-                        dqn.feed((prev_flat[i], actions[i], reward_p0, flat_next, done))
-                    last_p0_sa[i] = None if done else (prev_flat[i], actions[i])
-
-            current_states = [sp[0] for sp in next_states_players]
-
-            # Actualització Polyak
-            if global_step % DQN_POLYAK_FREQ < num_envs:
-                with torch.no_grad():
-                    for p, tp in zip(
-                        dqn.q_estimator.qnet.parameters(),
-                        dqn_polyak.q_estimator.qnet.parameters()
-                    ):
-                        tp.data.lerp_(p.data, DQN_POLYAK_TAU)
+        # Actualització Polyak
+        if global_step % DQN_POLYAK_FREQ < len(learner_traj):
+            with torch.no_grad():
+                for p, tp in zip(
+                    dqn.q_estimator.qnet.parameters(),
+                    dqn_polyak.q_estimator.qnet.parameters()
+                ):
+                    tp.data.lerp_(p.data, DQN_POLYAK_TAU)
 
         # Avaluació
-        if global_step % eval_every < (num_envs * NUM_STEPS):
+        if global_step % eval_every < len(learner_traj):
             wr_r, wr_g, metric = evaluar_agent(dqn, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
-            append_log(log_path, global_step, games_played, last_loss, wr_r, wr_g, metric, elapsed)
+            append_log(log_path, global_step, games_played, None, wr_r, wr_g, metric, elapsed)
             if metric > best_metric:
                 best_metric = metric
                 torch.save(dqn.q_estimator.qnet.state_dict(), save_dir / 'best.pt')
-                tqdm.write(f'[DQN step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
+                tqdm.write(f'[DQN-RLCard step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
             else:
-                tqdm.write(f'[DQN step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}%')
+                tqdm.write(f'[DQN-RLCard step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}%')
 
-        pbar.set_postfix({'step': global_step, 'WR_g': f'{wr_g if "wr_g" in locals() else 0.0:.1f}%'})
+        pbar.set_postfix({'WR_rand': f'{wr_r:.1f}%', 'WR_regl': f'{wr_g:.1f}%'})
 
-    vec_env.close()
-    # Guardar model
+    pbar.close()
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
     else:
         torch.save(dqn.q_estimator.qnet.state_dict(), save_dir / 'final.pt')
-    print(f'[DQN] Entrenament complet. Millor metric: {best_metric:.2f}%')
+    print(f'[DQN-RLCard] Entrenament complet. Millor metric: {best_metric:.2f}%')
 
 
-# NFSP
-def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
+# NFSP RLCard
+def run_nfsp(save_dir, total_timesteps, device):
+    """
+    NFSP sobre un sol TrucEnv seqüencial.
+    Inclou self-play intern, reservoir buffer i anticipatory parameter.
+    Oponent per episodi: 10% Random, 60% AgentRegles, 30% self-play natiu.
+    """
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = num_envs_override or NUM_ENVS_NFSP
-    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay = int(total_timesteps * 0.8)
-    q_memory = min(NFSP_Q_REPLAY, 500_000) if num_envs <= 4 else NFSP_Q_REPLAY
-    reservoir = min(NFSP_RESERVOIR, 500_000) if num_envs <= 4 else NFSP_RESERVOIR
-    warmup = min(NFSP_WARMUP, q_memory // 10)
 
     def make_nfsp():
         return NFSPAgent(
@@ -466,13 +434,13 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
             rl_learning_rate=NFSP_RL_LR,
             sl_learning_rate=NFSP_SL_LR,
             batch_size=NFSP_BATCH,
-            reservoir_buffer_capacity=reservoir,
-            q_replay_memory_size=q_memory,
+            reservoir_buffer_capacity=NFSP_RESERVOIR,
+            q_replay_memory_size=NFSP_Q_REPLAY,
             q_update_target_estimator_every=NFSP_Q_UPDATE,
             anticipatory_param=NFSP_ETA,
             q_epsilon_decay_steps=eps_decay,
             q_epsilon_end=NFSP_EPS_MIN,
-            q_replay_memory_init_size=warmup,
+            q_replay_memory_init_size=NFSP_WARMUP,
             q_batch_size=NFSP_BATCH,
             q_train_every=NFSP_Q_TRAIN_EVERY,
             device=device,
@@ -484,113 +452,57 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
     rand_opp    = RandomAgent(num_actions=N_ACTIONS)
     regles_opp  = AgentRegles(num_actions=N_ACTIONS, seed=456)
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
+    rng         = np.random.default_rng(SEED)
 
-    opp_map = build_opponent_map(num_envs)
-    vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
-
-    results = vec_env.reset_all()
-    current_states = [r[0] for r in results]
-
-    # Inicialitzar polítiques
-    p0.sample_episode_policy()
-    p1.sample_episode_policy()
-
-    num_updates = total_timesteps // (num_envs * NUM_STEPS)
-    global_step = 0
+    env          = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
+    eval_every   = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    global_step  = 0
     games_played = 0
-    best_metric = -1.0
-    t0 = time.time()
-    wr_g = 0.0
+    best_metric  = -1.0
+    wr_r = wr_g  = 0.0
+    t0           = time.time()
+    devnull      = io.StringIO()
 
-    # Transicions pendents (persistent entre steps) per capturar recompenses terminals
-    last_p0_sa = [None] * num_envs
-    last_p1_sa = [None] * num_envs   # ídem per p1 (selfplay envs)
+    pbar = trange(total_timesteps, desc='NFSP')
+    while global_step < total_timesteps:
+        r = rng.random()
+        learner_pid = int(rng.integers(0, 2))
 
-    pbar = trange(1, num_updates + 1, desc='NFSP')
-    for update in pbar:
-        for step in range(NUM_STEPS):
-            global_step += num_envs
+        if r < NFSP_PCT_RANDOM:
+            opp = rand_opp
+        elif r < NFSP_PCT_RANDOM + NFSP_PCT_REGLES:
+            opp = regles_opp
+        else:
+            opp = p1   # self-play natiu
 
-            actions = np.zeros(num_envs, dtype=np.int32)
-            prev_flat_p0 = [None] * num_envs
-            prev_flat_p1 = [None] * num_envs
-            step_for_p0  = np.zeros(num_envs, dtype=bool)
-            step_for_p1  = np.zeros(num_envs, dtype=bool)
+        if learner_pid == 0:
+            env.set_agents([p0, opp])
+        else:
+            env.set_agents([opp, p0])
 
-            for i in range(num_envs):
-                s = current_states[i]
-                active_pid = s['raw_obs']['id_jugador']
-                opp = opp_map[i]
-                learner_pid = 1 - opp['pid']
+        p0.sample_episode_policy()
+        if opp is p1:
+            p1.sample_episode_policy()
 
-                if opp['type'] == 'selfplay':
-                    if active_pid == learner_pid:
-                        flat = make_flat_state(s)
-                        prev_flat_p0[i] = flat
-                        actions[i] = p0.step(flat)
-                        step_for_p0[i] = True
-                    else:
-                        flat = make_flat_state(s)
-                        prev_flat_p1[i] = flat
-                        actions[i] = p1.step(flat)
-                        step_for_p1[i] = True
-                else:
-                    if active_pid == learner_pid:
-                        flat = make_flat_state(s)
-                        prev_flat_p0[i] = flat
-                        actions[i] = p0.step(flat)
-                        step_for_p0[i] = True
-                    else:
-                        if opp['type'] == 'random':
-                            actions[i], _ = rand_opp.eval_step(s)
-                        else:
-                            actions[i], _ = regles_opp.eval_step(s)
+        trajectories, _ = env.run(is_training=True)
+        learner_traj    = trajectories[learner_pid]
 
-            next_states_players, rewards_list, dones_list = vec_env.step(actions)
+        for ts in learner_traj:
+            global_step += 1
+            pbar.update(1)
+            with contextlib.redirect_stdout(devnull):
+                p0.feed(ts)
 
-            devnull = io.StringIO()
-            for i in range(num_envs):
-                opp = opp_map[i]
-                learner_pid = 1 - opp['pid']
-                opp_pid     = opp['pid']
-                flat_next   = make_flat_state(next_states_players[i][0])
-                reward_p0   = rewards_list[i][learner_pid]
-                reward_p1   = rewards_list[i][opp_pid]
-                done        = dones_list[i]
+        if opp is p1:
+            opp_traj = trajectories[1 - learner_pid]
+            for ts in opp_traj:
+                with contextlib.redirect_stdout(devnull):
+                    p1.feed(ts)
 
-                if done:
-                    games_played += 1
-                    # Completar transició pendent de p0 si el joc va acabar en torn de l'oponent
-                    if not step_for_p0[i] and last_p0_sa[i] is not None:
-                        prev_obs, prev_act = last_p0_sa[i]
-                        with contextlib.redirect_stdout(devnull):
-                            p0.feed((prev_obs, prev_act, reward_p0, flat_next, True))
-                    last_p0_sa[i] = None
-                    # Ídem per p1 (selfplay)
-                    if opp['type'] == 'selfplay' and not step_for_p1[i] and last_p1_sa[i] is not None:
-                        prev_obs, prev_act = last_p1_sa[i]
-                        with contextlib.redirect_stdout(devnull):
-                            p1.feed((prev_obs, prev_act, reward_p1, flat_next, True))
-                    last_p1_sa[i] = None
-                    # Resample política NFSP per al nou episodi
-                    p0.sample_episode_policy()
-                    if opp['type'] == 'selfplay':
-                        p1.sample_episode_policy()
-
-                if step_for_p0[i]:
-                    with contextlib.redirect_stdout(devnull):
-                        p0.feed((prev_flat_p0[i], actions[i], reward_p0, flat_next, done))
-                    last_p0_sa[i] = None if done else (prev_flat_p0[i], actions[i])
-
-                if step_for_p1[i]:
-                    with contextlib.redirect_stdout(devnull):
-                        p1.feed((prev_flat_p1[i], actions[i], reward_p1, flat_next, done))
-                    last_p1_sa[i] = None if done else (prev_flat_p1[i], actions[i])
-
-            current_states = [sp[0] for sp in next_states_players]
+        games_played += 1
 
         # Avaluació
-        if global_step % eval_every < (num_envs * NUM_STEPS):
+        if global_step % eval_every < len(learner_traj):
             wr_r, wr_g, metric = evaluar_agent(p0, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, None, wr_r, wr_g, metric, elapsed)
@@ -604,216 +516,195 @@ def run_nfsp(save_dir, total_timesteps, device, num_envs_override=None):
             else:
                 tqdm.write(f'[NFSP step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}%')
 
-        pbar.set_postfix({'step': global_step, 'WR_g': f'{wr_g:.1f}%'})
+        pbar.set_postfix({'WR_rand': f'{wr_r:.1f}%', 'WR_regl': f'{wr_g:.1f}%'})
 
-    vec_env.close()
+    pbar.close()
     best = save_dir / 'best.pt'
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
     else:
-        torch.save({'q_net': p0._rl_agent.q_estimator.qnet.state_dict(),
-                    'sl_net': p0.policy_network.state_dict()},
-                   save_dir / 'final.pt')
+        torch.save({
+            'q_net': p0._rl_agent.q_estimator.qnet.state_dict(),
+            'sl_net': p0.policy_network.state_dict(),
+        }, save_dir / 'final.pt')
     print(f'[NFSP] Entrenament complet. Millor metric: {best_metric:.2f}%')
 
 
-# PPO
-def _extract_obs_ppo(states_list):
-    """Retorna (obs_tensor, masks_tensor) per al batch de NUM_ENVS estats."""
-    obs_list, mask_list = [], []
-    for s in states_list:
-        obs_list.append(flatten_obs(s))
-        mask = np.zeros(N_ACTIONS, dtype=bool)
-        legal = list(s['legal_actions'].keys()) if hasattr(s['legal_actions'], 'keys') else s['legal_actions']
-        mask[legal] = True
-        mask_list.append(mask)
-    return (
-        torch.tensor(np.array(obs_list), dtype=torch.float32),
-        torch.tensor(np.array(mask_list), dtype=torch.bool),
-    )
-
-
-# PPO
-def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
+# DQN SB3
+def run_dqn_sb3(save_dir, total_timesteps, device):
+    """
+    DQN de Stable-Baselines3 sobre TrucGymEnv.
+    Permet comparar directament la implementació de RLCard vs la de SB3
+    sota la mateixa arquitectura i protocol d'avaluació.
+    Oponent: 5% Random, 95% AgentRegles. Posició aprenent alterna per episodi.
+    """
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    num_envs = num_envs_override or NUM_ENVS_PPO
-    num_steps = min(NUM_STEPS * NUM_ENVS_PPO // num_envs, 2048)
-    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
-    ppo_minibatch = min(PPO_MINIBATCH, num_envs * num_steps)
-    net   = SimpleActorCritic(OBS_DIM, N_ACTIONS, HIDDEN_SIZE).to(device)
-    agent = SimpleActorCriticAgent(net, N_ACTIONS, device)
+    eval_every  = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    eps_decay_f = SB3DQN_EPS_FRACTION
 
-    optimizer = optim.Adam(net.parameters(), lr=PPO_LR, eps=1e-5)
-    buffer    = RolloutBuffer(num_steps, num_envs, OBS_DIM, action_dim=N_ACTIONS, device=device)
+    env = _make_gym_env_fn('regles', learner_pid=0, seed=SEED)()
 
-    rand_opp    = RandomAgent(num_actions=N_ACTIONS)
-    regles_opp  = AgentRegles(num_actions=N_ACTIONS, seed=456)
+    policy_kwargs = dict(net_arch=HIDDEN_LAYERS)
+
+    model = SB3DQN(
+        'MlpPolicy', env,
+        learning_rate=SB3DQN_LR,
+        batch_size=SB3DQN_BATCH,
+        buffer_size=SB3DQN_MEMORY,
+        learning_starts=SB3DQN_WARMUP,
+        train_freq=SB3DQN_TRAIN_FREQ,
+        target_update_interval=SB3DQN_TARGET_UPDATE,
+        exploration_fraction=eps_decay_f,
+        exploration_initial_eps=SB3DQN_EPS_START,
+        exploration_final_eps=SB3DQN_EPS_END,
+        gamma=SB3DQN_GAMMA,
+        policy_kwargs=policy_kwargs,
+        verbose=0,
+        device=device,
+    )
+
     regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
+    best_metric = [-1.0]
+    t0          = time.time()
 
-    opp_map = build_opponent_map(num_envs)
-    if num_envs == 1:
-        cfg = ENV_CONFIG.copy()
-        cfg['seed'] = ENV_CONFIG.get('seed', SEED)
-        env_single = TrucEnv(cfg)
-        state0, pid0 = env_single.reset()
-        results = [(state0, pid0)]
-    else:
-        vec_env = SubprocVecEnv(num_envs, ENV_CONFIG)
-        results = vec_env.reset_all()
-    current_states = [r[0] for r in results]
+    class _EvalCallback(BaseCallback):
+        def __init__(self):
+            super().__init__(verbose=0)
+            self._last_eval = 0
 
-    num_updates = total_timesteps // (num_envs * num_steps)
-    global_step = 0
-    games_played = 0
-    best_metric  = -1.0
-    t0 = time.time()
-    pg_loss_val = v_loss_val = ent_loss_val = 0.0
-    wr_g = 0.0
+        def _on_step(self) -> bool:
+            if self.num_timesteps - self._last_eval >= eval_every:
+                self._last_eval = self.num_timesteps
+                eval_agent      = SB3EvalAgent(self.model)
+                wr_r, wr_g, metric = evaluar_agent(eval_agent, ENV_CONFIG, regles_eval)
+                elapsed = time.time() - t0
+                append_log(log_path, self.num_timesteps, 0, None, wr_r, wr_g, metric, elapsed)
+                if metric > best_metric[0]:
+                    best_metric[0] = metric
+                    self.model.save(str(save_dir / 'best'))
+                    print(f'[DQN-SB3 step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
+                else:
+                    print(f'[DQN-SB3 step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}%')
+            return True
 
-    pbar = trange(1, num_updates + 1, desc='PPO')
-    for update in pbar:
-        buffer.step = 0  # reset buffer pointer
-        for step in range(num_steps):
-            global_step += num_envs
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=_EvalCallback(),
+        progress_bar=True,
+    )
 
-            obs_t, masks_t = _extract_obs_ppo(current_states)
-            obs_t   = obs_t.to(device)
-            masks_t = masks_t.to(device)
+    env.close()
+    model.save(str(save_dir / 'final'))
+    if not (save_dir / 'best.zip').exists():
+        model.save(str(save_dir / 'best'))
+    print(f'[DQN-SB3] Entrenament complet. Millor metric: {best_metric[0]:.2f}%')
 
-            active_players = [s['raw_obs']['id_jugador'] for s in current_states]
-            is_learning = torch.ones(num_envs, device=device)
 
-            net.eval()
-            with torch.no_grad():
-                logits, value = net(obs_t)
-                logits = logits.masked_fill(~masks_t, -1e9)
-                dist   = torch.distributions.Categorical(logits=logits)
-                action = dist.sample()
-                logprob = dist.log_prob(action)
+# PPO SB3
+def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
+    """
+    PPO on-policy via Stable-Baselines3.
+    Molts entorns paral·lels (SB3SubprocVecEnv + TrucGymEnv).
+    Oponent gestionat internament: 5% Random, 95% AgentRegles.
+    Posició aprenent alterna (learner_pid 0/1) per aprendre les dues posicions.
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    log_path = save_dir / 'training_log.csv'
+    init_log(log_path)
 
-            # Sobreescriure accions pels oponents fixos
-            for i, opp in opp_map.items():
-                if active_players[i] == opp['pid']:
-                    if opp['type'] == 'random':
-                        a, _ = rand_opp.eval_step(current_states[i])
-                        action[i] = a
-                        is_learning[i] = 0.0
-                    elif opp['type'] == 'regles':
-                        a, _ = regles_opp.eval_step(current_states[i])
-                        action[i] = a
-                        is_learning[i] = 0.0
-                    # selfplay: el learner actua (no sobreescribim)
+    num_envs   = num_envs_override or NUM_ENVS_PPO
+    n_steps    = min(PPO_N_STEPS * NUM_ENVS_PPO // num_envs, 2048)
+    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    batch_size = min(PPO_MINIBATCH, num_envs * n_steps)
+    n_random   = max(1, int(num_envs * PPO_PCT_RANDOM))
 
-            actions_np = action.cpu().numpy()
-            if num_envs == 1:
-                next_s, next_p_id = env_single.step(int(actions_np[0]))
-                raw = next_s['raw_obs']
-                ri = raw.get('reward_intermedis', [0.0, 0.0])
-                done = (next_p_id is None)
-                if done:
-                    next_s, next_p_id = env_single.reset()
-                env_single.action_recorder = []
-                next_states_players = [(next_s, next_p_id)]
-                rewards_list = [ri]
-                dones_list = [done]
-            else:
-                next_states_players, rewards_list, dones_list = vec_env.step(actions_np)
+    env_fns = [
+        _make_gym_env_fn('random' if i < n_random else 'regles', i % 2, SEED + i)
+        for i in range(num_envs)
+    ]
 
-            step_rewards = []
-            for i in range(num_envs):
-                if dones_list[i]:
-                    games_played += 1
-                step_rewards.append(rewards_list[i][active_players[i]])
+    vec_env = SB3SubprocVecEnv(env_fns)
 
-            rewards_t = torch.tensor(step_rewards, dtype=torch.float32, device=device)
-            dones_t   = torch.tensor(dones_list, dtype=torch.float32, device=device)
+    policy_kwargs = dict(
+        net_arch=dict(pi=HIDDEN_LAYERS, vf=HIDDEN_LAYERS),
+        activation_fn=nn.ReLU,
+    )
 
-            buffer.add(obs_t, action, logprob, rewards_t, value.squeeze(-1),
-                       dones_t, masks_t, is_learning)
+    model = PPO(
+        'MlpPolicy', vec_env,
+        learning_rate=PPO_LR,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=PPO_EPOCHS,
+        gamma=PPO_GAMMA,
+        gae_lambda=PPO_GAE_LAMBDA,
+        clip_range=PPO_CLIP,
+        ent_coef=PPO_ENT,
+        vf_coef=PPO_VF,
+        max_grad_norm=0.5,
+        policy_kwargs=policy_kwargs,
+        verbose=0,
+        device=device,
+    )
 
-            current_states = [sp[0] for sp in next_states_players]
+    regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
+    best_metric = [-1.0]
+    t0          = time.time()
 
-        # PPO update
-        obs_last_t, _ = _extract_obs_ppo(current_states)
-        obs_last_t = obs_last_t.to(device)
-        net.eval()
-        with torch.no_grad():
-            _, last_value = net(obs_last_t)
-            last_value = last_value.squeeze(-1)
+    class _EvalLogCallback(BaseCallback):
+        def __init__(self):
+            super().__init__(verbose=0)
+            self._last_eval = 0
 
-        advantages, returns = calcular_gae(
-            buffer.rewards, buffer.values, buffer.dones,
-            last_value, torch.zeros_like(last_value),
-            PPO_GAMMA, PPO_GAE_LAMBDA,
-        )
+        def _on_step(self) -> bool:
+            if self.num_timesteps - self._last_eval >= eval_every:
+                self._last_eval = self.num_timesteps
+                eval_agent      = SB3EvalAgent(self.model)
+                wr_r, wr_g, metric = evaluar_agent(eval_agent, ENV_CONFIG, regles_eval)
+                elapsed = time.time() - t0
+                ep_rew  = (self.locals.get('infos') or [{}])[0].get('episode', {}).get('r', None)
+                append_log(log_path, self.num_timesteps, 0, ep_rew, wr_r, wr_g, metric, elapsed)
+                if metric > best_metric[0]:
+                    best_metric[0] = metric
+                    self.model.save(str(save_dir / 'best'))
+                    print(f'[PPO step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
+                else:
+                    print(f'[PPO step {self.num_timesteps}] '
+                          f'random={wr_r:.1f}% regles={wr_g:.1f}%')
+            return True
 
-        b_obs, b_act, b_lp, b_adv, b_ret, b_masks, b_il = buffer.get(advantages, returns)
-        b_inds = np.arange(num_envs * num_steps)
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=_EvalLogCallback(),
+        progress_bar=True,
+    )
 
-        net.train()
-        for _ in range(PPO_EPOCHS):
-            np.random.shuffle(b_inds)
-            for start in range(0, num_envs * num_steps, ppo_minibatch):
-                mb = b_inds[start:start + ppo_minibatch]
-                loss, pg_loss, v_loss, ent_loss = calcular_perdua_ppo(
-                    agent, b_obs[mb], b_act[mb], b_lp[mb],
-                    b_adv[mb], b_ret[mb], b_masks[mb],
-                    is_learning=b_il[mb],
-                    coef_retall=PPO_CLIP, coef_ent=PPO_ENT, coef_v=PPO_VF,
-                )
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(net.parameters(), 0.5)
-                optimizer.step()
+    vec_env.close()
+    model.save(str(save_dir / 'final'))
+    if not (save_dir / 'best.zip').exists():
+        model.save(str(save_dir / 'best'))
+    print(f'[PPO] Entrenament complet. Millor metric: {best_metric[0]:.2f}%')
 
-        pg_loss_val  = pg_loss.item()
-        v_loss_val   = v_loss.item()
-        ent_loss_val = ent_loss.item()
-        last_loss    = pg_loss_val
-
-        # Avaluació
-        if global_step % eval_every < (num_envs * num_steps):
-            wr_r, wr_g, metric = evaluar_agent(agent, ENV_CONFIG, regles_eval)
-            elapsed = time.time() - t0
-            append_log(log_path, global_step, games_played, pg_loss_val,
-                       wr_r, wr_g, metric, elapsed)
-            if metric > best_metric:
-                best_metric = metric
-                torch.save(net.state_dict(), save_dir / 'best.pt')
-                tqdm.write(f'[PPO step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}% → nou millor!')
-            else:
-                tqdm.write(f'[PPO step {global_step}] random={wr_r:.1f}% regles={wr_g:.1f}%')
-
-        pbar.set_postfix({
-            'step': global_step,
-            'pg': f'{pg_loss_val:.3f}',
-            'v': f'{v_loss_val:.3f}',
-            'WR_g': f'{wr_g:.1f}%',
-        })
-
-        if update % 100 == 0:
-            torch.cuda.empty_cache()
-
-    if num_envs > 1:
-        vec_env.close()
-    best = save_dir / 'best.pt'
-    if best.exists():
-        shutil.copy2(best, save_dir / 'final.pt')
-    else:
-        torch.save(net.state_dict(), save_dir / 'final.pt')
-    print(f'[PPO] Entrenament complet. Millor metric: {best_metric:.2f}%')
 
 
 def main():
     parser = argparse.ArgumentParser(description='Entrenament Comparatiu DQN/NFSP/PPO')
-    parser.add_argument('--agent', choices=['dqn', 'nfsp', 'ppo'], required=True)
+    parser.add_argument('--agent',
+                        choices=['dqn', 'dqn_sb3', 'nfsp', 'ppo'],
+                        required=True,
+                        help='dqn=RLCard DQN (seqüencial) | dqn_sb3=SB3 DQN | nfsp=NFSP RLCard | ppo=SB3 PPO')
     parser.add_argument('--total_timesteps', type=int, default=TOTAL_TIMESTEPS)
-    parser.add_argument('--num_envs', type=int, default=None)
-    parser.add_argument('--save_dir', type=str, default=None)
+    parser.add_argument('--num_envs',        type=int, default=None,
+                        help='Només aplica a PPO (per defecte 48)')
+    parser.add_argument('--save_dir',        type=str, default=None)
     args = parser.parse_args()
 
     set_seed(SEED)
@@ -829,16 +720,18 @@ def main():
     if args.save_dir:
         save_dir = args.save_dir
     else:
-        ts = datetime.now().strftime('%d%m_%H%Mh')
+        ts       = datetime.now().strftime('%d%m_%H%Mh')
         save_dir = str(Path(__file__).parent / 'registres' / f'{args.agent}_{ts}')
 
     print(f'[{args.agent.upper()}] Timesteps: {args.total_timesteps:,} | Guardat a: {save_dir}')
 
     t_start = time.time()
     if args.agent == 'dqn':
-        run_dqn(save_dir, args.total_timesteps, device, args.num_envs)
+        run_dqn(save_dir, args.total_timesteps, device)
+    elif args.agent == 'dqn_sb3':
+        run_dqn_sb3(save_dir, args.total_timesteps, device)
     elif args.agent == 'nfsp':
-        run_nfsp(save_dir, args.total_timesteps, device, args.num_envs)
+        run_nfsp(save_dir, args.total_timesteps, device)
     elif args.agent == 'ppo':
         run_ppo(save_dir, args.total_timesteps, device, args.num_envs)
 
