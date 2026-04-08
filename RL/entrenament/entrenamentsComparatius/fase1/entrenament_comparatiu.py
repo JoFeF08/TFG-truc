@@ -171,8 +171,13 @@ class SB3EvalAgent:
         else:
             obs_flat = np.asarray(obs, dtype=np.float32)
 
+        legal = list(state['legal_actions'].keys())
         action, _ = self.model.predict(obs_flat[np.newaxis], deterministic=True)
-        return int(action[0]), {}
+        action = int(action[0])
+        
+        if action not in legal:
+            action = legal[0]  # fallback: primera acció legal
+        return action, {}
 
 
 def flatten_obs(state) -> np.ndarray:
@@ -641,7 +646,6 @@ def run_dqn_sb3(save_dir, total_timesteps, device):
     model.learn(
         total_timesteps=total_timesteps,
         callback=_EvalCallback(),
-        progress_bar=True,
     )
 
     env.close()
@@ -729,7 +733,6 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
     model.learn(
         total_timesteps=total_timesteps,
         callback=_EvalLogCallback(),
-        progress_bar=True,
     )
 
     vec_env.close()
