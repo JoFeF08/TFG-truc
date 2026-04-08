@@ -406,7 +406,7 @@ def run_dqn(save_dir, total_timesteps, device):
         games_played += 1
 
         # Actualització Polyak
-        if global_step % DQN_POLYAK_FREQ < len(learner_traj):
+        if global_step % DQN_POLYAK_FREQ < max(n_ts, 1):
             with torch.no_grad():
                 for p, tp in zip(
                     dqn.q_estimator.qnet.parameters(),
