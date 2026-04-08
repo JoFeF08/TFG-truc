@@ -106,7 +106,11 @@ class TrucGymEnv(gymnasium.Env):
 
         Retorna: (obs, reward, terminated, truncated, info)
         """
-        state, player_id = self.rlcard_env.step(int(action))
+        action = int(action)
+        if action not in self._legal_actions:
+            action = self._legal_actions[0]  # Fallback: acció segura si el model prediu una i·legal
+
+        state, player_id = self.rlcard_env.step(action)
         done = (player_id is None)
         reward = 0.0
 
