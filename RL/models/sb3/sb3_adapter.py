@@ -1,0 +1,33 @@
+import numpy as np
+from joc.entorn.cartes_accions import ACTION_LIST
+
+N_ACTIONS = len(ACTION_LIST)
+
+class SB3PPOEvalAgent:
+    """
+    Wrapper per fer un model MaskablePPO de SB3 compatible amb
+    l'interfície eval_step() de RLCard (usada per evaluar_agent).
+    Aquest adaptador permet avaluar i fer jugar els models SB3 de
+    la mateixa manera que es feia amb els agents propis o de RLCard.
+    """
+    use_raw = False
+
+    def __init__(self, model, n_actions: int = N_ACTIONS):
+        self.model = model
+        self.num_actions = n_actions
+
+    def eval_step(self, state):
+        obs = state['obs']
+        if isinstance(obs, dict):
+            obs_flat = np.concatenate(
+                [obs['obs_cartes'].flatten(), obs['obs_context']], axis=0
+            ).astype(np.float32)
+        else:
+            obs_flat = np.asarray(obs, dtype=np.float32)
+
+        # predict() necessita dimensió de batch: (1, obs_dim)
+        action, _ = self.model.predict(
+            obs_flat[np.newaxis],
+            deterministic=True,
+        )
+        return int(action[0]), {}
