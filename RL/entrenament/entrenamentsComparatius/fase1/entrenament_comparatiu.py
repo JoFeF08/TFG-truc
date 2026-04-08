@@ -368,15 +368,41 @@ def run_dqn(save_dir, total_timesteps, device):
         else:
             env.set_agents([opp, dqn])
 
-        trajectories, _ = env.run(is_training=True)
-        learner_traj    = trajectories[learner_pid]
+        # Loop manual: control total del format de transicions per a dqn.feed()
+        state, player_id = env.reset()
+        n_ts = 0
+        pending = None   # (flat, action) pendent de tancar quan acabi l'oponent
 
-        for ts in learner_traj:
-            global_step += 1
-            pbar.update(1)
-            with contextlib.redirect_stdout(devnull):
-                dqn.feed(ts)
+        while player_id is not None:
+            flat = make_flat_state(state)
 
+            if player_id == learner_pid:
+                action = dqn.step(flat)
+                next_state, next_pid = env.step(action)
+                done = (next_pid is None)
+                reward = float(env.game.get_payoffs()[learner_pid]) if done else 0.0
+                next_flat = flat if done else make_flat_state(next_state)
+                with contextlib.redirect_stdout(devnull):
+                    dqn.feed((flat, action, reward, next_flat, done))
+                pending = None
+                n_ts += 1
+            else:
+                opp_action, _ = opp.eval_step(state)
+                next_state, next_pid = env.step(opp_action)
+                done = (next_pid is None)
+                if done and pending is not None:
+                    prev_flat, prev_action = pending
+                    reward = float(env.game.get_payoffs()[learner_pid])
+                    with contextlib.redirect_stdout(devnull):
+                        dqn.feed((prev_flat, prev_action, reward, prev_flat, True))
+                    n_ts += 1
+                pending = None
+
+            state = next_state
+            player_id = next_pid
+
+        global_step += n_ts
+        pbar.update(n_ts)
         games_played += 1
 
         # Actualització Polyak
@@ -484,25 +510,44 @@ def run_nfsp(save_dir, total_timesteps, device):
         if opp is p1:
             p1.sample_episode_policy()
 
-        trajectories, _ = env.run(is_training=True)
-        learner_traj    = trajectories[learner_pid]
+        # Loop manual
+        state, player_id = env.reset()
+        n_ts = 0
 
-        for ts in learner_traj:
-            global_step += 1
-            pbar.update(1)
-            with contextlib.redirect_stdout(devnull):
-                p0.feed(ts)
+        while player_id is not None:
+            flat = make_flat_state(state)
 
-        if opp is p1:
-            opp_traj = trajectories[1 - learner_pid]
-            for ts in opp_traj:
+            if player_id == learner_pid:
+                action = p0.step(flat)
+                next_state, next_pid = env.step(action)
+                done = (next_pid is None)
+                reward = float(env.game.get_payoffs()[learner_pid]) if done else 0.0
+                next_flat = flat if done else make_flat_state(next_state)
                 with contextlib.redirect_stdout(devnull):
-                    p1.feed(ts)
+                    p0.feed((flat, action, reward, next_flat, done))
+                n_ts += 1
+            else:
+                if opp is p1:
+                    opp_action = p1.step(flat)
+                else:
+                    opp_action, _ = opp.eval_step(state)
+                next_state, next_pid = env.step(opp_action)
+                done = (next_pid is None)
+                if opp is p1:
+                    reward_p1 = float(env.game.get_payoffs()[1 - learner_pid]) if done else 0.0
+                    next_flat_p1 = flat if done else make_flat_state(next_state)
+                    with contextlib.redirect_stdout(devnull):
+                        p1.feed((flat, opp_action, reward_p1, next_flat_p1, done))
 
+            state = next_state
+            player_id = next_pid
+
+        global_step += n_ts
+        pbar.update(n_ts)
         games_played += 1
 
         # Avaluació
-        if global_step % eval_every < len(learner_traj):
+        if global_step % eval_every < max(n_ts, 1):
             wr_r, wr_g, metric = evaluar_agent(p0, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, None, wr_r, wr_g, metric, elapsed)
@@ -523,7 +568,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
     else:
-        torch.save({
+        torch.save({r
             'q_net': p0._rl_agent.q_estimator.qnet.state_dict(),
             'sl_net': p0.policy_network.state_dict(),
         }, save_dir / 'final.pt')
