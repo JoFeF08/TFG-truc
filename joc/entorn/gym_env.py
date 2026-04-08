@@ -3,14 +3,6 @@ TrucGymEnv – Wrapper Gymnasium per a TrucEnv (RLCard).
 
 Exposa la interfície estàndard de Gymnasium per permetre l'ús d'algorismes
 com el PPO de Stable-Baselines3 (SB3) amb l'entorn multi-agent de RLCard.
-
-Lògica interna:
-  - El wrapper gestiona els torns de l'oponent internament.
-  - L'agent aprenent sempre actua com a jugador `learner_pid`.
-  - Els rewards intermedis s'acumulen (amplificats ×5) i el payoff final
-    s'afegeix quan acaba la partida.
-  - Suporta action masking via el mètode `action_masks()`,
-    compatible amb MaskablePPO de sb3_contrib.
 """
 
 import sys
@@ -28,22 +20,9 @@ import gymnasium
 from gymnasium import spaces
 
 
-# Dimensions de l'observació aplanada: 6×4×9 (cartes) + 23 (context)
-OBS_DIM = 6 * 4 * 9 + 23  # = 239
-
-
 class TrucGymEnv(gymnasium.Env):
     """
     Entorn Gymnasium de Truc per a algoritmes SB3.
-
-    Paràmetres
-    ----------
-    env_config : dict
-        Configuració per a TrucEnv (num_jugadors, cartes_jugador, etc.).
-    opponent : agent amb eval_step(state) -> (action, info), opcional
-        Agent oponent. Si és None s'usa RandomAgent.
-    learner_pid : int
-        ID del jugador aprenent (0 o 1).
     """
 
     metadata = {"render_modes": []}
@@ -65,19 +44,20 @@ class TrucGymEnv(gymnasium.Env):
         else:
             self.opponent = opponent
 
+        # Calcular OBS_DIM
+        dummy_state, _ = self.rlcard_env.reset()
+        obs_dim = self._flatten_obs(dummy_state).shape[0]
+
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(OBS_DIM,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(self.n_actions)
 
         # Estat intern
         self._current_state = None
         self._legal_actions: list = list(range(self.n_actions))
-        self._last_obs = np.zeros(OBS_DIM, dtype=np.float32)
+        self._last_obs = np.zeros(obs_dim, dtype=np.float32)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     def _flatten_obs(self, state) -> np.ndarray:
         """Converteix l'estat RLCard en un vector pla de 239 dimensions."""
@@ -89,7 +69,7 @@ class TrucGymEnv(gymnasium.Env):
         return np.asarray(obs, dtype=np.float32)
 
     def _reward_from_raw(self, state) -> float:
-        """Extreu el reward intermedi del jugador aprenent (amplificat ×5)."""
+        """Extreu el reward intermedi"""
         raw = state.get('raw_obs', {})
         ri = raw.get('reward_intermedis', [0.0, 0.0])
         equip = self.learner_pid % 2
@@ -97,35 +77,20 @@ class TrucGymEnv(gymnasium.Env):
             return float(ri[equip]) * 5.0
         return 0.0
 
-    # ------------------------------------------------------------------
-    # Action masking (per a MaskablePPO de sb3_contrib)
-    # ------------------------------------------------------------------
-
-    def action_masks(self) -> np.ndarray:
-        """Retorna un array booleà amb les accions legals actuals."""
-        mask = np.zeros(self.n_actions, dtype=bool)
-        for a in self._legal_actions:
-            mask[a] = True
-        return mask
-
     def set_opponent(self, opponent) -> None:
         """Permet canviar l'agent oponent en calent (per a callbacks)."""
         self.opponent = opponent
 
-    # ------------------------------------------------------------------
-    # Interfície Gymnasium
-    # ------------------------------------------------------------------
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
         state, player_id = self.rlcard_env.reset()
 
-        # Gestionar torns de l'oponent si va primer
+        # Gestionar torns
         state, player_id = self._skip_opponent_turns(state, player_id, reward_acc=0.0)
 
         if player_id is None:
-            # Cas extrem: la partida ha acabat abans del primer torn
             return self._last_obs.copy(), {}
 
         self._current_state = state
@@ -146,7 +111,6 @@ class TrucGymEnv(gymnasium.Env):
         reward = 0.0
 
         if done:
-            # Partida acabada en el torn de l'aprenent
             payoffs = self.rlcard_env.game.get_payoffs()
             reward += float(payoffs[self.learner_pid])
             return self._last_obs.copy(), reward, True, False, {}
@@ -154,29 +118,24 @@ class TrucGymEnv(gymnasium.Env):
         # Reward intermedi pel pas actual
         reward += self._reward_from_raw(state)
 
-        # Gestionar torns de l'oponent
         while player_id != self.learner_pid and player_id is not None:
             opp_action, _ = self.opponent.eval_step(state)
             state, player_id = self.rlcard_env.step(opp_action)
 
             if player_id is None:
-                # Partida acabada en un torn de l'oponent
                 payoffs = self.rlcard_env.game.get_payoffs()
                 reward += float(payoffs[self.learner_pid])
                 return self._last_obs.copy(), reward, True, False, {}
 
             reward += self._reward_from_raw(state)
 
-        # Actualitzar estat intern
+        # Actualitzar estat
         self._current_state = state
         self._legal_actions = list(state['legal_actions'].keys())
         obs = self._flatten_obs(state)
         self._last_obs = obs
         return obs, reward, False, False, {}
 
-    # ------------------------------------------------------------------
-    # Utilitat interna
-    # ------------------------------------------------------------------
 
     def _skip_opponent_turns(self, state, player_id, reward_acc: float):
         """Avança els torns de l'oponent fins que toqui a l'aprenent."""

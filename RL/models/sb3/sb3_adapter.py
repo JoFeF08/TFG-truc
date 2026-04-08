@@ -25,7 +25,6 @@ class SB3PPOEvalAgent:
         else:
             obs_flat = np.asarray(obs, dtype=np.float32)
 
-        # predict() necessita dimensió de batch: (1, obs_dim)
         action, _ = self.model.predict(
             obs_flat[np.newaxis],
             deterministic=True,
