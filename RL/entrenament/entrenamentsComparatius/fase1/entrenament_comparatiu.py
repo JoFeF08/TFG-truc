@@ -415,7 +415,7 @@ def run_dqn(save_dir, total_timesteps, device):
                     tp.data.lerp_(p.data, DQN_POLYAK_TAU)
 
         # Avaluació
-        if global_step % eval_every < len(learner_traj):
+        if global_step % eval_every < max(n_ts, 1):
             wr_r, wr_g, metric = evaluar_agent(dqn, ENV_CONFIG, regles_eval)
             elapsed = time.time() - t0
             append_log(log_path, global_step, games_played, None, wr_r, wr_g, metric, elapsed)
