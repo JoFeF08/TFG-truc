@@ -288,6 +288,8 @@ class TrucGame:
             
         elif action_str.startswith('play_card'):
             idx = int(action_str[-1])
+            if idx >= len(player.hand):
+                idx = 0 
             card_played = player.hand.pop(idx)
             self.cartes_ronda.append((self.current_player, card_played))
             self.hist_cartes.append((self.current_player, card_played))
