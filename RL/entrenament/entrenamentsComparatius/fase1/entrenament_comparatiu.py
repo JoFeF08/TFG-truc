@@ -670,7 +670,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
 
     num_envs   = num_envs_override or NUM_ENVS_PPO
     n_steps    = min(PPO_N_STEPS * NUM_ENVS_PPO // num_envs, 2048)
-    eval_every = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    eval_every = max(min(EVAL_EVERY_STEPS, total_timesteps // 20), num_envs * 10)
     batch_size = min(PPO_MINIBATCH, num_envs * n_steps)
     n_random   = max(1, int(num_envs * PPO_PCT_RANDOM))
 
