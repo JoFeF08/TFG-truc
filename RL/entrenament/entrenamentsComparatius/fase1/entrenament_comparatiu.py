@@ -568,7 +568,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     if best.exists():
         shutil.copy2(best, save_dir / 'final.pt')
     else:
-        torch.save({r
+        torch.save({
             'q_net': p0._rl_agent.q_estimator.qnet.state_dict(),
             'sl_net': p0.policy_network.state_dict(),
         }, save_dir / 'final.pt')
