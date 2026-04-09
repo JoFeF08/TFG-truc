@@ -302,7 +302,7 @@ def _make_gym_env_fn(opponent_type: str, learner_pid: int, seed: int):
 
 
 # DQN RLCard
-def run_dqn(save_dir, total_timesteps, device):
+def run_dqn(save_dir, total_timesteps, device, max_time: int | None = None):
     """
     DQN de RLCard sobre un sol TrucEnv seqüencial.
     El replay buffer gran garanteix diversitat de mostres sense paral·lelisme.
@@ -313,7 +313,7 @@ def run_dqn(save_dir, total_timesteps, device):
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    eps_decay = int(total_timesteps * 0.8)
+    eps_decay = int(min(total_timesteps, 24_000_000) * 0.8)
 
     dqn = DQNAgent(
         num_actions=N_ACTIONS,
@@ -353,7 +353,7 @@ def run_dqn(save_dir, total_timesteps, device):
     rng         = np.random.default_rng(SEED)
 
     env          = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
-    eval_every   = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    eval_every   = EVAL_EVERY_STEPS if max_time else min(EVAL_EVERY_STEPS, total_timesteps // 20)
     global_step  = 0
     games_played = 0
     best_metric  = -1.0
@@ -362,7 +362,7 @@ def run_dqn(save_dir, total_timesteps, device):
     devnull      = io.StringIO()
 
     pbar = trange(total_timesteps, desc='DQN-RLCard')
-    while global_step < total_timesteps:
+    while global_step < total_timesteps and (max_time is None or time.time() - t0 < max_time):
         # Triar oponent per a aquest episodi
         opp, opp_type = _pick_opponent(rng, rand_opp, regles_opp, dqn_polyak,
                                        DQN_PCT_RANDOM, DQN_PCT_REGLES)
@@ -443,7 +443,7 @@ def run_dqn(save_dir, total_timesteps, device):
 
 
 # NFSP RLCard
-def run_nfsp(save_dir, total_timesteps, device):
+def run_nfsp(save_dir, total_timesteps, device, max_time: int | None = None):
     """
     NFSP sobre un sol TrucEnv seqüencial.
     Inclou self-play intern, reservoir buffer i anticipatory parameter.
@@ -454,7 +454,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    eps_decay = int(total_timesteps * 0.8)
+    eps_decay = int(min(total_timesteps, 24_000_000) * 0.8)
 
     def make_nfsp():
         return NFSPAgent(
@@ -486,7 +486,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     rng         = np.random.default_rng(SEED)
 
     env          = wrap_env_aplanat(TrucEnv(ENV_CONFIG))
-    eval_every   = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    eval_every   = EVAL_EVERY_STEPS if max_time else min(EVAL_EVERY_STEPS, total_timesteps // 20)
     global_step  = 0
     games_played = 0
     best_metric  = -1.0
@@ -495,7 +495,7 @@ def run_nfsp(save_dir, total_timesteps, device):
     devnull      = io.StringIO()
 
     pbar = trange(total_timesteps, desc='NFSP')
-    while global_step < total_timesteps:
+    while global_step < total_timesteps and (max_time is None or time.time() - t0 < max_time):
         r = rng.random()
         learner_pid = int(rng.integers(0, 2))
 
@@ -581,7 +581,7 @@ def run_nfsp(save_dir, total_timesteps, device):
 
 
 # DQN SB3
-def run_dqn_sb3(save_dir, total_timesteps, device):
+def run_dqn_sb3(save_dir, total_timesteps, device, max_time: int | None = None):
     """
     DQN de Stable-Baselines3 sobre TrucGymEnv.
     Permet comparar directament la implementació de RLCard vs la de SB3
@@ -593,7 +593,7 @@ def run_dqn_sb3(save_dir, total_timesteps, device):
     log_path = save_dir / 'training_log.csv'
     init_log(log_path)
 
-    eval_every  = min(EVAL_EVERY_STEPS, total_timesteps // 20)
+    eval_every  = EVAL_EVERY_STEPS if max_time else min(EVAL_EVERY_STEPS, total_timesteps // 20)
     eps_decay_f = SB3DQN_EPS_FRACTION
 
     env = _make_gym_env_fn('regles', learner_pid=0, seed=SEED)()
@@ -627,6 +627,8 @@ def run_dqn_sb3(save_dir, total_timesteps, device):
             self._last_eval = 0
 
         def _on_step(self) -> bool:
+            if max_time is not None and time.time() - t0 >= max_time:
+                return False
             if self.num_timesteps - self._last_eval >= eval_every:
                 self._last_eval = self.num_timesteps
                 eval_agent      = SB3EvalAgent(self.model)
@@ -643,8 +645,9 @@ def run_dqn_sb3(save_dir, total_timesteps, device):
                           f'random={wr_r:.1f}% regles={wr_g:.1f}%')
             return True
 
+    learn_steps = 999_000_000 if max_time else total_timesteps
     model.learn(
-        total_timesteps=total_timesteps,
+        total_timesteps=learn_steps,
         callback=_EvalCallback(),
     )
 
@@ -656,7 +659,7 @@ def run_dqn_sb3(save_dir, total_timesteps, device):
 
 
 # PPO SB3
-def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
+def run_ppo(save_dir, total_timesteps, device, num_envs_override=None, max_time: int | None = None):
     """
     PPO on-policy via Stable-Baselines3.
     Molts entorns paral·lels (SB3SubprocVecEnv + TrucGymEnv).
@@ -670,7 +673,7 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
 
     num_envs   = num_envs_override or NUM_ENVS_PPO
     n_steps    = min(PPO_N_STEPS * NUM_ENVS_PPO // num_envs, 2048)
-    eval_every = max(min(EVAL_EVERY_STEPS, total_timesteps // 20), num_envs * 10)
+    eval_every = max(EVAL_EVERY_STEPS if max_time else min(EVAL_EVERY_STEPS, total_timesteps // 20), num_envs * 10)
     batch_size = min(PPO_MINIBATCH, num_envs * n_steps)
     n_random   = max(1, int(num_envs * PPO_PCT_RANDOM))
 
@@ -713,6 +716,8 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
             self._last_eval = 0
 
         def _on_step(self) -> bool:
+            if max_time is not None and time.time() - t0 >= max_time:
+                return False
             if self.num_timesteps - self._last_eval >= eval_every:
                 self._last_eval = self.num_timesteps
                 eval_agent      = SB3EvalAgent(self.model)
@@ -730,8 +735,9 @@ def run_ppo(save_dir, total_timesteps, device, num_envs_override=None):
                           f'random={wr_r:.1f}% regles={wr_g:.1f}%')
             return True
 
+    learn_steps = 999_000_000 if max_time else total_timesteps
     model.learn(
-        total_timesteps=total_timesteps,
+        total_timesteps=learn_steps,
         callback=_EvalLogCallback(),
     )
 
@@ -750,6 +756,8 @@ def main():
                         required=True,
                         help='dqn=RLCard DQN (seqüencial) | dqn_sb3=SB3 DQN | nfsp=NFSP RLCard | ppo=SB3 PPO')
     parser.add_argument('--total_timesteps', type=int, default=TOTAL_TIMESTEPS)
+    parser.add_argument('--max_time_seconds', type=int, default=None,
+                        help='Temps màxim d\'entrenament en segons. Si s\'especifica, ignora total_timesteps.')
     parser.add_argument('--num_envs',        type=int, default=None,
                         help='Només aplica a PPO (per defecte 48)')
     parser.add_argument('--save_dir',        type=str, default=None)
@@ -771,17 +779,20 @@ def main():
         ts       = datetime.now().strftime('%d%m_%H%Mh')
         save_dir = str(Path(__file__).parent / 'registres' / f'{args.agent}_{ts}')
 
-    print(f'[{args.agent.upper()}] Timesteps: {args.total_timesteps:,} | Guardat a: {save_dir}')
+    if args.max_time_seconds:
+        print(f'[{args.agent.upper()}] Temps màxim: {args.max_time_seconds}s ({args.max_time_seconds/3600:.2f}h) | Guardat a: {save_dir}')
+    else:
+        print(f'[{args.agent.upper()}] Timesteps: {args.total_timesteps:,} | Guardat a: {save_dir}')
 
     t_start = time.time()
     if args.agent == 'dqn':
-        run_dqn(save_dir, args.total_timesteps, device)
+        run_dqn(save_dir, args.total_timesteps, device, args.max_time_seconds)
     elif args.agent == 'dqn_sb3':
-        run_dqn_sb3(save_dir, args.total_timesteps, device)
+        run_dqn_sb3(save_dir, args.total_timesteps, device, args.max_time_seconds)
     elif args.agent == 'nfsp':
-        run_nfsp(save_dir, args.total_timesteps, device)
+        run_nfsp(save_dir, args.total_timesteps, device, args.max_time_seconds)
     elif args.agent == 'ppo':
-        run_ppo(save_dir, args.total_timesteps, device, args.num_envs)
+        run_ppo(save_dir, args.total_timesteps, device, args.num_envs, args.max_time_seconds)
 
     total_time = time.time() - t_start
     print(f'\nTemps total: {total_time:.0f}s ({total_time/3600:.2f}h)')
