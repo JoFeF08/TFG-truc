@@ -198,6 +198,14 @@ def evaluar_agent(agent, env_config: dict, regles_agent,
     rand_eval = RandomAgent(num_actions=N_ACTIONS)
     wins_r = wins_g = 0
 
+    def _agent_action(flat, raw_state):
+        if hasattr(agent, 'step'):
+            return agent.step(flat)
+        if hasattr(agent, 'eval_step'):
+            a, _ = agent.eval_step(raw_state)
+            return a
+        return _sb3_step(agent, flat, raw_state)
+
     for _ in range(n_random):
         env = TrucEnv(env_config)
         env = wrap_env_aplanat(env)
@@ -207,7 +215,7 @@ def evaluar_agent(agent, env_config: dict, regles_agent,
         while player_id is not None:
             flat = make_flat_state(state)
             if player_id == pid:
-                action = agent.step(flat) if hasattr(agent, 'step') else _sb3_step(agent, flat, state)
+                action = _agent_action(flat, state)
                 state, player_id = env.step(action)
             else:
                 a, _ = rand_eval.eval_step(state)
@@ -225,7 +233,7 @@ def evaluar_agent(agent, env_config: dict, regles_agent,
         while player_id is not None:
             flat = make_flat_state(state)
             if player_id == pid:
-                action = agent.step(flat) if hasattr(agent, 'step') else _sb3_step(agent, flat, state)
+                action = _agent_action(flat, state)
                 state, player_id = env.step(action)
             else:
                 a, _ = regles_agent.eval_step(state)
