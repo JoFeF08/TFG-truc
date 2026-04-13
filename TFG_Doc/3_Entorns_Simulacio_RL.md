@@ -162,41 +162,79 @@ ACTION_LIST[action_id]  # e.g. 0 -> 'play_card_0', 4 -> 'apostar_truc'
 Aquest mètode de l'entorn delega directament a `TrucGame.get_legal_actions()`, que és on realment es calcula la llista d'accions permeses. Retorna una **llista d'índexs** (enters) que representen les accions vàlides.
 
 
-## TrucEnvMa — Adaptador RLCard per Mans
+## Wrappers Gymnasium per Stable-Baselines3
 
+Els adaptadors RLCard (`TrucEnv`/`TrucEnvMa`) treballen amb un loop seqüencial propi i una interfície multi-agent basada en `set_agents()`. Per entrenar amb **Stable-Baselines3 (SB3)** — que espera la interfície estàndard `gymnasium.Env` (`reset()` / `step(action)` sense saber res dels oponents) — s'han creat dos wrappers:
 
-`TrucEnvMa` és funcionalment idèntica a `TrucEnv` (veure el capítol superior sobre l'extracció d'estats) en tot el que respecta a l'extracció d'observacions. La **única diferència** és el motor de joc subjacent:
+| Fitxer | Classe | Motor subjacent |
+|:--|:--|:--|
+| `joc/entorn/gym_env.py` | `TrucGymEnv` | `TrucEnv` (partides senceres) |
+| `joc/entorn_ma/gym_env_ma.py` | `TrucGymEnvMa` | `TrucEnvMa` (mans) |
 
-| Aspecte | `TrucEnv` | `TrucEnvMa` |
-|:--------|:----------|:-------------|
-| Motor de joc | `TrucGame` | `TrucGameMa` |
-| `self.name` | `'truc'` | `'truc_ma'` |
-| Observació `obs_cartes` | `(6, 4, 9)` ✓ | `(6, 4, 9)` ✓ — **idèntica** |
-| Observació `obs_context` | `(23,)` ✓ | `(23,)` ✓ — **idèntica** |
-| `state_size` | `239` | `239` — **idèntic** |
-| `_extract_state()` | Codi idèntic | Codi idèntic |
+### Arquitectura
 
-Aquesta identitat d'observacions és deliberada: permet que **el mateix model neuronal** (MLP o GRU) pugui entrenar-se amb qualsevol dels dos entorns sense cap modificació arquitectural. L'única variable que canvia és la **durada i reward de l'episodi**.
+Els dos wrappers segueixen el mateix patró:
 
-#### Estructura de l'Observació (recordatori)
+```python
+class TrucGymEnv(gymnasium.Env):
+    def __init__(self, env_config: dict, opponent=None, learner_pid: int = 0):
+        self.rlcard_env = TrucEnv(env_config)
+        self.learner_pid = learner_pid
+        self.opponent    = opponent or RandomAgent(num_actions=n_actions)
+        ...
+        self.observation_space = spaces.Box(-inf, +inf, shape=(obs_dim,), dtype=float32)
+        self.action_space      = spaces.Discrete(n_actions)
+```
 
-Com a referència ràpida (detalls complets just abans en aquest mateix document):
+La idea clau és que **un sol jugador és l'aprenent** (`learner_pid`), i l'altre jugador es mou automàticament dins del `step()` del wrapper, cridant `opponent.eval_step(state)`. Així l'algorisme de SB3 veu un entorn monojugador convencional.
 
-**`obs_cartes` (6, 4, 9)** — Tensor de cartes one-hot:
-- Canal 0: Mà actual del jugador
-- Canals 1-4: Historial de cartes (propi, rival 1, company, rival 2)
-- Canal 5: Cartes assenyalades pel company
+### Observació Aplanada
 
-**`obs_context` (23,)** — Vector de context:
-- [0-1]: Puntuació equip propi/rival (÷24)
-- [2-3]: Nivell truc/envit (÷24)
-- [4]: Fase del torn
-- [5]: Comptador ronda (÷cartes)
-- [6-9]: One-hot qui és mà
-- [10-13]: One-hot qui ha cantat truc
-- [14-16]: One-hot qui ha cantat envit
-- [17-18]: Rondes guanyades propi/rival (÷3)
-- [19-20]: Guanyador R1/R2 (+1/−1/0)
-- [21]: Envit acceptat (0/1)
-- [22]: Response state (0.0/0.5/1.0)
+A diferència de `TrucEnv`, que retorna l'observació com un diccionari `{'obs_cartes': (6,4,9), 'obs_context': (23,)}`, els wrappers **aplanen** l'observació en un únic vector de **239 dimensions** (`6*4*9 + 23 = 239`) per poder usar una `MlpPolicy` de SB3:
+
+```python
+def _flatten_obs(self, state) -> np.ndarray:
+    obs = state['obs']
+    if isinstance(obs, dict):
+        return np.concatenate(
+            [obs['obs_cartes'].flatten(), obs['obs_context']], axis=0
+        ).astype(np.float32)
+    return np.asarray(obs, dtype=np.float32)
+```
+
+### Loop de `step()`
+
+Un `step()` del wrapper:
+
+1. Aplica l'acció de l'aprenent al motor subjacent.
+2. Si la partida ha acabat, retorna el *payoff* final com a recompensa (`done=True`).
+3. Altrament, llegeix el *reward shaping* intermedi (`reward_intermedis[equip_aprenent] × 5.0`) i el suma a la recompensa del pas.
+4. Executa accions de l'oponent fins que torni a tocar a l'aprenent (bucle intern), acumulant els rewards intermedis pel camí.
+5. Retorna `(obs_aprenent, reward_acumulat, done, truncated, info)`.
+
+El factor ×5.0 aplicat al *reward intermedi* serveix per donar-li més pes respecte al soroll natural del *policy gradient* de PPO (sense ell els rewards de shaping —tots < 1— quedarien ofegats per la variància del gradient).
+
+### Ús amb SB3 Vectoritzat
+
+Aquests wrappers s'instancien dins factories que es passen a `stable_baselines3.common.vec_env.SubprocVecEnv`. Exemple simplificat extret de Fase 1:
+
+```python
+def _make_gym_env_fn(opponent_type, learner_pid, seed):
+    def _init():
+        cfg = ENV_CONFIG.copy()
+        cfg['seed'] = seed
+        opp = RandomAgent(n_actions) if opponent_type == 'random' \
+            else AgentRegles(n_actions, seed=seed+1000)
+        return TrucGymEnv(cfg, opponent=opp, learner_pid=learner_pid)
+    return _init
+
+env_fns = [_make_gym_env_fn('regles', i%2, SEED+i) for i in range(48)]
+vec_env = SB3SubprocVecEnv(env_fns)
+```
+
+D'aquesta manera, la paral·lelització s'aconsegueix directament amb el `SubprocVecEnv` natiu de SB3 (48 subprocessos per defecte en PPO), sense necessitat de cap entorn paral·lel propi.
+
+### Diferència entre `TrucGymEnv` i `TrucGymEnvMa`
+
+Codi gairebé idèntic: l'única cosa que canvia és el motor subjacent (`TrucEnv` vs `TrucEnvMa`). Amb `TrucGymEnv` cada episodi és una partida sencera fins a 24 punts; amb `TrucGymEnvMa` cada episodi és una sola mà. Això és crucial per la Fase 2 — vegeu [[7_Entorn_Ma_Curriculum]] i [[8_Fase2_Curriculum]].
 

@@ -5,47 +5,55 @@
 
 ## Índex Modular (Obsidian)
 
-Aquesta documentació està estructurada en mòduls temàtics formant un graf interactiu. Podeu navegar pels següents enllaços per endinsar-vos en la teoria arquitectònica del projecte:
+Aquesta documentació està estructurada en mòduls temàtics formant un graf interactiu. Els documents s'organitzen seguint la lectura natural del projecte: primer l'arquitectura general, després la lògica del joc i els entorns RL, després els models disponibles, i finalment les dues fases experimentals (Fase 1 — comparativa d'algorismes, i Fase 2 — curriculum learning).
 
-- [[1_Arquitectura_MVC]]: Orquestració del joc interactiu, contractes de Vista i Model.
-- [[2_Logica_Joc]]: Arbre de decisions i regles motores (`TrucGame` i `TrucGameMa`).
-- [[3_Entorns_Simulacio_RL]]: Adaptadors d'estat humà a vectors/tensors formals (`TrucEnv` i `TrucEnvMa`).
-- [[4_Entorns_Parallelisme]]: Execució *Scatter-gather* multi-procés pur per reduir els colls d'ampolla.
-- [[5_Models_RLCard]]: Entrenament *off-policy* baselines (DQN, NFSP) i el "Cos" extractor de CNN.
-- [[6_Model_PPO_Propi]]: Autoria de xarxes recurrents *on-policy* PPO amb GRU des de zero.
+- [[1_Arquitectura_MVC]]: Arquitectura MVC del joc interactiu, contractes de Vista i Model.
+- [[2_Logica_Joc]]: Motor lògic del joc (`TrucGame` i `TrucGameMa`) i sistema de *reward shaping*.
+- [[3_Entorns_Simulacio_RL]]: Adaptadors RLCard (`TrucEnv`, `TrucEnvMa`) i wrappers Gymnasium per SB3 (`TrucGymEnv`, `TrucGymEnvMa`).
+- [[4_Estructura_Models]]: Organització de `RL/models/` (`core/`, `rlcard_legacy/`, `sb3/`, `model_propi/`) i en profunditat l'`AgentRegles` estocàstic.
+- [[5_Fase1_Entrenament]]: Comparativa d'algorismes DQN-RLCard / NFSP-RLCard / DQN-SB3 / PPO-SB3 amb condicions homogènies.
+- [[6_Fase1_Resultats]]: Resultats dels experiments de la Fase 1 (per steps fixos i per temps fix).
+- [[7_Entorn_Ma_Curriculum]]: Entorn per mans (`TrucGameMa`/`TrucEnvMa`/`TrucGymEnvMa`) i el concepte de *curriculum learning* aplicat al Truc.
+- [[8_Fase2_Curriculum]]: Fase 2 experimental: control vs curriculum (mans → partides).
 
 ---
 
 ## Resum de l'Estructura
 
-El projecte **TFG-truc** implementa el joc de cartes Truc amb una arquitectura modular preparada per a l'entrenament d'agents de Reinforcement Learning (RL).
+El projecte **TFG-truc** implementa el joc de cartes Truc amb una arquitectura modular preparada per a l'entrenament d'agents de Reinforcement Learning (RL). S'utilitzen tant els algorismes de la llibreria **RLCard** (DQN, NFSP) com els de **Stable-Baselines3** (DQN, PPO), comparant-los en igualtat de condicions.
 
 ### Visió General
 
-L'objectiu principal és proporcionar un entorn robust per simular partides de Truc i entrenar agents intel·ligents utilitzant la llibreria RLCard.
+L'objectiu principal és proporcionar un entorn robust per simular partides de Truc i entrenar agents intel·ligents, comparant algorismes clàssics i investigant l'efecte del *curriculum learning* (entrenar primer en mans individuals i després en partides senceres) sobre la seva convergència.
 
 ### Estructura de Directoris
 
 - `joc/`: Nucli del joc sota una arquitectura MVC.
-  - `entorn/`: Motor de simulació per als agents de Reinforcement Learning.
-    - `game.py`: Motor lògic del joc. Gestiona els estats de la partida, les regles, la progressió de rondes i mans, i les apostes (Truc i Envit).
-    - `env.py`: Adaptador per a RLCard. Tradueix l'estat intern del joc a observacions numèriques i exposa l'API estàndard de l'entorn (`reset`, `step`).
-    - `parallel_env.py`: Entorns vectorials paral·lels (`SubprocVecEnv`) que executen N instàncies de `TrucEnv` en processos separats via `multiprocessing`. Detalls exhaustius a [[4_Entorns_Parallelisme]].
-    - `cartes_accions.py`: Fitxer de constants compartides.
-    - `rols/`: Implementacions dels rols de l'entorn.
-      - `dealer.py`: Gestiona la baralla (creació, barreja i repartiment de cartes als jugadors).
-      - `judger.py`: Conté la lògica d'arbitratge: determina el guanyador d'una ronda, d'una mà i de l'envit.
-      - `player.py`: Classe base que defineix la interfície comuna dels agents o jugadors aleatoris.
-  - `entorn_ma/`: Variant de l'entorn per a entrenament per mans individuals (1 episodi = 1 mà). Detalls exhaustius a [[4_Entorns_Parallelisme]].
-    - `game_ma.py`: Motor lògic per mans (`TrucGameMa`). Cada mà és un episodi complet amb reward net normalitzat.
-    - `env_ma.py`: Adaptador RLCard per mans (`TrucEnvMa`). Observació idèntica a `TrucEnv` (6,4,9)+(23,).
-    - `parallel_env_ma.py`: Entorn vectorial paral·lel per mans (`SubprocVecEnvMa`). Mateixa arquitectura que `SubprocVecEnv`.
-  - `controlador/`: Gestors i classes de control (arquitectura MVC) que interactuen amb la simulació.
-  - `vista/`: Interfícies gràfiques o de consola (MVC) on s'hi desenvolupen i mostren les partides (inclou visualitzador per consola i escriptori).
+  - `entorn/`: Motor de simulació per als agents (partides senceres, Single-Agent).
+    - `game.py`: Motor lògic del joc (`TrucGame`). Gestiona estats, regles, rondes, mans, apostes (Truc i Envit) i *reward shaping*.
+    - `env.py`: Adaptador RLCard (`TrucEnv`). Tradueix l'estat a tensors (6,4,9) + (23,).
+    - `gym_env.py`: Wrapper Gymnasium (`TrucGymEnv`) per utilitzar els entorns amb Stable-Baselines3 (SB3).
+    - `cartes_accions.py`: Constants compartides (cartes, llistat d'accions, senyals).
+    - `rols/`: `dealer.py`, `judger.py`, `player.py`.
+  - `entorn_ma/`: Variant de l'entorn per mans individuals (1 episodi = 1 mà).
+    - `game_ma.py`: Motor lògic per mans (`TrucGameMa`). Reward net normalitzat final de mà.
+    - `env_ma.py`: Adaptador RLCard per mans (`TrucEnvMa`).
+    - `gym_env_ma.py`: Wrapper Gymnasium per mans (`TrucGymEnvMa`).
+    - `parallel_env_ma.py`: Versió paral·lela heretada (no utilitzada al pipeline actual, que depèn de `SubprocVecEnv` de SB3).
+  - `controlador/`: Gestors i classes de control (arquitectura MVC).
+  - `vista/`: Interfícies gràfiques (consola i escriptori, amb recursos a `img_iu/`).
 - `RL/`: Flux de treball de Reinforcement Learning.
-  - `entrenament/`: Scripts i codi dedicat a realitzar els entrenaments i l'avaluació.
-  - `models/`: Models amb els pesos i punts de control per als diferents agents.
-  - `notebooks/`: Llibretes Jupyter per elaborar proves, estadístiques i avaluacions sobre l'entrenament dels agents.
-  - `tools/`: Utilitats generals pel tractament de les simulacions i xarxes neuronals de l'entorn.
-- `demo.py`: Script de demostració interactiu per jugar. Permet configurar el nombre de jugadors, tipus de partides, rols (Humà o Agent) a través del terminal o finestra d'escriptori.
-- `TFG_Doc/`: Documentació teòrica fragmentada i codi del projecte en Markdown preparat per Obsidian.
+  - `models/`: Arquitectures i agents.
+    - `core/`: `feature_extractor.py` (`CosMultiInput`, `ModelPreEntrenament`), `obs_adapter.py`, `loader.py`.
+    - `rlcard_legacy/`: `model_adapter.py` (wrapper per connectar agents RLCard amb el nostre loader).
+    - `sb3/`: `sb3_adapter.py` (`SB3PPOEvalAgent` per avaluar models SB3 dins el pipeline de RLCard).
+    - `model_propi/`: `agent_regles.py` (agent Rule-Based estocàstic).
+  - `entrenament/`:
+    - `entrenamentEstatTruc/`: Preentrenament supervisat del "Cos" CNN+MLP (`preentrenar_cos.py`).
+    - `entrenamentsComparatius/fase1/`: Script de la Fase 1 (`entrenament_comparatiu.py`) i llançadors bash.
+    - `entrenamentsComparatius/fase2/`: Scripts de Fase 2 (`entrenament_fase2_curriculum.py`, etc.) i llançadors bash.
+  - `tools/`: Utilitats generals.
+- `demo.py`: Script de demostració interactiu per jugar una partida (humà vs bot).
+- `TFG_Doc/`: Documentació teòrica i llibretes de resultats.
+  - `notebooks/1_comparacio_inicial/`: Notebook i carpetes `resultats_fase1_*`.
+  - `notebooks/2_curriculum_learning/`: Notebook Fase 2.
