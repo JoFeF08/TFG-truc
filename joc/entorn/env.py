@@ -18,6 +18,8 @@ from joc.entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL,
 _PAL_IDX = {p: i for i, p in enumerate(PALS)}   # {'S':0, 'C':1, 'O':2, 'B':3}
 _NUM_IDX = {n: i for i, n in enumerate(NUMS)}    # {'1':0,'3':1,'4':2,...,'12':8}
 
+OBS_CONTEXT_SIZE = 24
+
 class TrucEnv(Env):
     """
     Entorn del joc del Truc per a RLCard.
@@ -56,9 +58,9 @@ class TrucEnv(Env):
 
         # Format multi-entrada
         # obs_cartes: (6 canals, 4 pals, 9 rangs)
-        # obs_context: (23,) — informació contextual
+        # obs_context: (24,) — informació contextual
         self.OBS_CARTES_SHAPE = (6, 4, 9)
-        self.OBS_CONTEXT_SIZE = 23
+        self.OBS_CONTEXT_SIZE = OBS_CONTEXT_SIZE
 
         # state_size i state_shape per compatibilitat amb RLCard
         self.state_size = (
@@ -79,7 +81,7 @@ class TrucEnv(Env):
 
         Retorna un diccionari 'obs' amb:
           - 'obs_cartes'  : np.ndarray (6, 4, 9) float32
-          - 'obs_context' : np.ndarray (17,)     float32
+          - 'obs_context' : np.ndarray (24,)     float32
         """
         player_id = state['id_jugador']
         n = self.num_jugadors
@@ -188,9 +190,10 @@ class TrucEnv(Env):
         # [21] envit_accepted
         obs_context[21] = 1.0 if state['envit_accepted'] else 0.0
 
-        # [22] response_state (normalitzat 0--1)
-        rs_map = {0: 0.0, 1: 0.5, 2: 1.0} # NO/TRUC/ENVIT
-        obs_context[22] = rs_map.get(state['response_state_val'], 0.0)
+        # [22] is_truc_pending, [23] is_envit_pending — flags binaris (semàntica clara)
+        rs_val = state['response_state_val']
+        obs_context[22] = 1.0 if rs_val == 1 else 0.0  # TRUC_PENDING
+        obs_context[23] = 1.0 if rs_val == 2 else 0.0  # ENVIT_PENDING
 
         # Accions legals
         legal_actions_list = state['accions_legals']

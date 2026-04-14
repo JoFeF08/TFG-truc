@@ -48,6 +48,7 @@ class TrucGymEnvMa(gymnasium.Env):
         self._current_state = None
         self._legal_actions: list = list(range(self.n_actions))
         self._last_obs = np.zeros(obs_dim, dtype=np.float32)
+        self._pending_reward = 0.0
 
     def _flatten_obs(self, state) -> np.ndarray:
         obs = state['obs']
@@ -72,7 +73,8 @@ class TrucGymEnvMa(gymnasium.Env):
         super().reset(seed=seed)
 
         state, player_id = self.rlcard_env.reset()
-        state, player_id = self._skip_opponent_turns(state, player_id)
+        state, player_id, pending = self._skip_opponent_turns(state, player_id)
+        self._pending_reward = pending
 
         if player_id is None:
             return self._last_obs.copy(), {}
@@ -90,7 +92,8 @@ class TrucGymEnvMa(gymnasium.Env):
 
         state, player_id = self.rlcard_env.step(action)
         done = (player_id is None)
-        reward = 0.0
+        reward = self._pending_reward
+        self._pending_reward = 0.0
 
         if done:
             payoffs = self.rlcard_env.game.get_payoffs()
@@ -117,7 +120,12 @@ class TrucGymEnvMa(gymnasium.Env):
         return obs, reward, False, False, {}
 
     def _skip_opponent_turns(self, state, player_id):
+        """Avança els torns de l'oponent fins que toqui a l'aprenent,
+        acumulant els rewards intermedis generats pels passos de l'oponent."""
+        reward_acc = 0.0
         while player_id != self.learner_pid and player_id is not None:
             opp_action, _ = self.opponent.eval_step(state)
             state, player_id = self.rlcard_env.step(opp_action)
-        return state, player_id
+            if player_id is not None:  # no acumular si la partida ha acabat
+                reward_acc += self._reward_from_raw(state)
+        return state, player_id, reward_acc

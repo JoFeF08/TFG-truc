@@ -188,6 +188,7 @@ class TrucGame:
                     self.reward_intermedis[1-winner_team] -= 1.0 * (pts_truc / 24.0)  # qui fa fora: 1.0x (retirada estratègica)
 
                     if max(self.score) >= self.puntuacio_final:
+                        self.reward_intermedis = [0.0, 0.0]
                         return self.get_state(self.current_player), None
 
                     self.response_state = ResponseState.NO_PENDING
@@ -279,6 +280,7 @@ class TrucGame:
             self.reward_intermedis[1-winner] -= 1.2 * (pts_truc / 24.0)  # penalització moderada (permet retirada estratègica)
 
             if max(self.score) >= self.puntuacio_final:
+                self.reward_intermedis = [0.0, 0.0]
                 return self.get_state(self.current_player), None
             
             self.hist_cartes_ant = list(self.hist_cartes)
@@ -340,6 +342,7 @@ class TrucGame:
                     self.debug_print(f"=====>DEBUG: Score després: {self.score}")
 
                     if max(self.score) >= self.puntuacio_final:
+                        self.reward_intermedis = [0.0, 0.0]
                         return self.get_state(self.current_player), None
 
                     self.hist_cartes_ant = list(self.hist_cartes)

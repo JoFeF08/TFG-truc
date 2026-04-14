@@ -12,7 +12,7 @@ def exportar_model(ruta_pt, ruta_npz):
     
     np_dict = {}
     for k, v in q_sd.items():
-        v_np = v.numpy()www
+        v_np = v.numpy()
         if 'weight' in k and len(v_np.shape) == 2:
             v_np = v_np.T
             

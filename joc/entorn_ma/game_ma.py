@@ -252,6 +252,8 @@ class TrucGameMa:
 
         elif action_str.startswith('play_card'):
             idx = int(action_str[-1])
+            if idx >= len(player.hand):
+                idx = 0
             card_played = player.hand.pop(idx)
             self.cartes_ronda.append((self.current_player, card_played))
             self.hist_cartes.append((self.current_player, card_played))
@@ -419,26 +421,3 @@ class TrucGameMa:
                 payoffs.append(0.0)
         return payoffs
 
-    def _pes_ronda(self, ronda_num, ronda_winners):
-        n_cartes = self.cartes_jugador
-        if n_cartes == 3:
-            pesos = [2.0, 1.0, 0.5]
-        elif n_cartes == 5:
-            pesos = [2.0, 1.0, 0.5, 0.3, 0.1]
-        else:
-            raise ValueError(f"_pes_ronda nomes suporta 3 o 5 cartes, rebut {n_cartes}")
-        pes = pesos[ronda_num]
-        rondes_equip_0 = 0
-        rondes_equip_1 = 0
-        for winner in ronda_winners:
-            if winner != -1:
-                equip = winner % 2
-                if equip == 0:
-                    rondes_equip_0 += 1
-                else:
-                    rondes_equip_1 += 1
-        rondes_necessaries = (n_cartes // 2)
-        estas_obligat = rondes_equip_1 >= rondes_necessaries
-        if estas_obligat:
-            pes = min(1.0, pes * 1.5)
-        return pes

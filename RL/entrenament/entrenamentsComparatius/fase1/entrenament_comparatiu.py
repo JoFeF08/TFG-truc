@@ -28,12 +28,7 @@ import io
 import shutil
 from pathlib import Path
 from datetime import datetime
-from tqdm import trange
-
-import numpy as np
-import torch
-import torch.nn as nn
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 try:
     root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))

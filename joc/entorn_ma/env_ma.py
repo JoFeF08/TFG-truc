@@ -60,7 +60,7 @@ class TrucEnvMa(Env):
         self.signal_map = {signal: i for i, signal in enumerate(ACTIONS_SIGNAL)}
 
         self.OBS_CARTES_SHAPE = (6, 4, 9)
-        self.OBS_CONTEXT_SIZE = 23
+        self.OBS_CONTEXT_SIZE = 24
 
         self.state_size = (
             self.OBS_CARTES_SHAPE[0] * self.OBS_CARTES_SHAPE[1] * self.OBS_CARTES_SHAPE[2]
@@ -167,8 +167,10 @@ class TrucEnvMa(Env):
         obs_context[19] = _winner_rel(0)
         obs_context[20] = _winner_rel(1)
         obs_context[21] = 1.0 if state['envit_accepted'] else 0.0
-        rs_map = {0: 0.0, 1: 0.5, 2: 1.0}
-        obs_context[22] = rs_map.get(state['response_state_val'], 0.0)
+    
+        rs_val = state['response_state_val']
+        obs_context[22] = 1.0 if rs_val == 1 else 0.0  # TRUC_PENDING
+        obs_context[23] = 1.0 if rs_val == 2 else 0.0  # ENVIT_PENDING
 
         legal_actions_list = state['accions_legals']
         legal_actions = OrderedDict({a: None for a in legal_actions_list})
