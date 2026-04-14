@@ -236,5 +236,5 @@ D'aquesta manera, la paral·lelització s'aconsegueix directament amb el `Subpro
 
 ### Diferència entre `TrucGymEnv` i `TrucGymEnvMa`
 
-Codi gairebé idèntic: l'única cosa que canvia és el motor subjacent (`TrucEnv` vs `TrucEnvMa`). Amb `TrucGymEnv` cada episodi és una partida sencera fins a 24 punts; amb `TrucGymEnvMa` cada episodi és una sola mà. Això és crucial per la Fase 2 — vegeu [[7_Entorn_Ma_Curriculum]] i [[8_Fase2_Curriculum]].
+Codi gairebé idèntic: l'única cosa que canvia és el motor subjacent (`TrucEnv` vs `TrucEnvMa`). Amb `TrucGymEnv` cada episodi és una partida sencera fins a 24 punts; amb `TrucGymEnvMa` cada episodi és una sola mà. Això és crucial per la Fase 2 — vegeu [[7_Fase2_MarcTeoric]] i [[8_Fase2_Implementacio]].
 

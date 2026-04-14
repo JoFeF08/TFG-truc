@@ -13,8 +13,8 @@ Aquesta documentació està estructurada en mòduls temàtics formant un graf in
 - [[4_Estructura_Models]]: Organització de `RL/models/` (`core/`, `rlcard_legacy/`, `sb3/`, `model_propi/`) i en profunditat l'`AgentRegles` estocàstic.
 - [[5_Fase1_Entrenament]]: Comparativa d'algorismes DQN-RLCard / NFSP-RLCard / DQN-SB3 / PPO-SB3 amb condicions homogènies.
 - [[6_Fase1_Resultats]]: Resultats dels experiments de la Fase 1 (per steps fixos i per temps fix).
-- [[7_Entorn_Ma_Curriculum]]: Entorn per mans (`TrucGameMa`/`TrucEnvMa`/`TrucGymEnvMa`) i el concepte de *curriculum learning* aplicat al Truc.
-- [[8_Fase2_Curriculum]]: Fase 2 experimental: control vs curriculum (mans → partides).
+- [[7_Fase2_MarcTeoric]]: Fase 2 — Marc teòric: entorn per mans (`TrucGameMa`/`TrucEnvMa`/`TrucGymEnvMa`) i el concepte de *curriculum learning* aplicat al Truc.
+- [[8_Fase2_Implementacio]]: Fase 2 — Implementació i resultats: disseny experimental (control vs curriculum), scripts d'entrenament i anàlisi de resultats.
 
 ---
 
