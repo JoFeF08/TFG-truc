@@ -45,6 +45,14 @@ echo "Steps per run: ${STEPS}" >> "$RESUM"
 echo "2 algorismes × 3 variants (scratch, frozen, finetune) = 6 runs" >> "$RESUM"
 echo "-------------------------------------------" >> "$RESUM"
 
+cleanup_zombies() {
+    # Mata qualsevol python3 de fase3 penjat (forkserver workers orfes de
+    # SubprocVecEnv, etc.) i deixa temps perquè el SO recuperi la RAM.
+    pkill -9 -f "entrenament_fase3.py" 2>/dev/null || true
+    pkill -9 -f "multiprocessing.forkserver" 2>/dev/null || true
+    sleep 2
+}
+
 run_variant() {
     local agent=$1
     local variant=$2
@@ -75,7 +83,15 @@ run_variant() {
 
     echo "${name}: ${DURATION}s (${H}h ${M}m ${S}s)" >> "$RESUM"
     echo ">> ${name} completat en ${H}h ${M}m ${S}s"
+
+    # Neteja zombies i deixa que el SO alliberi RAM abans del pròxim run.
+    cleanup_zombies
+    echo ">> Pausa de 60s (cooldown RAM/GPU)..."
+    sleep 60
 }
+
+# Si s'interromp el script, igualment matem els processos Python pendents.
+trap cleanup_zombies EXIT INT TERM
 
 # Ordre: primer DQN (3 variants), després PPO (3 variants).
 run_variant "dqn_sb3" "scratch"
