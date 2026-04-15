@@ -62,7 +62,7 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
     de l'entorn de joc (TrucEnv).
     """
     cartes_np  = np.zeros((num_mostres, 6, 4, 9), dtype=np.float32)
-    context_np = np.zeros((num_mostres, 23), dtype=np.float32)
+    context_np = np.zeros((num_mostres, 24), dtype=np.float32)
     labels_envit_np = np.zeros((num_mostres, 1), dtype=np.float32)
     labels_accions_np= np.zeros((num_mostres, 19), dtype=np.float32)
     labels_forces_np = np.zeros((num_mostres, 3), dtype=np.float32)

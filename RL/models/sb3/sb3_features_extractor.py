@@ -8,7 +8,7 @@ from RL.models.core.feature_extractor import CosMultiInput
 class CosMultiInputSB3(BaseFeaturesExtractor):
     """
     Adaptador perquè SB3 pugui utilitzar CosMultiInput amb una observació
-    Box(239,) aplanada (216 de obs_cartes + 23 de obs_context).
+    Box(240,) aplanada (216 de obs_cartes + 24 de obs_context).
 
     Ús:
         policy_kwargs = dict(

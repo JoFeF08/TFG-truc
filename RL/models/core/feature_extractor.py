@@ -13,7 +13,7 @@ class CosMultiInput(nn.Module):
 
     Entrades:
       · cartes  : Tensor (batch, 6, 4, 9)  — Mapa de cartes 2D
-      · context : Tensor (batch, 23)       — Informació contextual
+      · context : Tensor (batch, 24)       — Informació contextual
 
     Sortida:
       · Tensor (batch, 128) — Representació latent del joc
@@ -34,7 +34,7 @@ class CosMultiInput(nn.Module):
 
         # Branca B: Capa densa sobre el context
         self.branca_densa = nn.Sequential(
-            nn.Linear(23, 32),
+            nn.Linear(24, 32),
             nn.ReLU(),
         )
         dim_context = 32

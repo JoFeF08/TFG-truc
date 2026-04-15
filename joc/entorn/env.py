@@ -66,7 +66,7 @@ class TrucEnv(Env):
         self.state_size = (
             self.OBS_CARTES_SHAPE[0] * self.OBS_CARTES_SHAPE[1] * self.OBS_CARTES_SHAPE[2]
             + self.OBS_CONTEXT_SIZE
-        )  # 6*4*9 + 23 = 239
+        )
         self.state_shape = [[self.state_size] for _ in range(self.num_jugadors)]
         self.action_shape = [[len(ACTION_LIST)] for _ in range(self.num_jugadors)]
 
