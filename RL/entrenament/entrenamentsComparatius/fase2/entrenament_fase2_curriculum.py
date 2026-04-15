@@ -48,6 +48,7 @@ from stable_baselines3 import PPO, DQN as SB3DQN
 from joc.entorn import TrucEnv
 from joc.entorn.cartes_accions import ACTION_LIST
 from joc.entorn.gym_env import TrucGymEnv
+from RL.tools.obs_utils import flatten_obs
 from joc.entorn_ma.env_ma import TrucEnvMa
 from joc.entorn_ma.gym_env_ma import TrucGymEnvMa
 
@@ -140,18 +141,9 @@ PPO_MINIBATCH = 1024
 PPO_N_STEPS   = 256
 
 
-def flatten_obs(state) -> np.ndarray:
-    obs = state['obs']
-    if isinstance(obs, dict):
-        return np.concatenate(
-            [obs['obs_cartes'].flatten(), obs['obs_context']], axis=0
-        ).astype(np.float32)
-    return np.asarray(obs, dtype=np.float32)
-
-
 def make_flat_state(state) -> dict:
     return {
-        'obs':           flatten_obs(state),
+        'obs':           flatten_obs(state['obs']),
         'legal_actions': state['legal_actions'],
         'raw_obs':       state.get('raw_obs', {}),
     }
@@ -162,11 +154,7 @@ def wrap_env_aplanat(env):
 
     def _extract_patched(self, state):
         extracted = original(state)
-        if isinstance(extracted.get('obs'), dict):
-            extracted['obs'] = np.concatenate([
-                extracted['obs']['obs_cartes'].flatten(),
-                extracted['obs']['obs_context'],
-            ], axis=0).astype(np.float32)
+        extracted['obs'] = flatten_obs(extracted['obs'])
         return extracted
 
     env._extract_state = types.MethodType(_extract_patched, env)

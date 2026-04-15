@@ -12,6 +12,8 @@ except Exception:
 import gymnasium
 from gymnasium import spaces
 
+from RL.tools.obs_utils import flatten_obs
+
 
 class TrucGymEnvMa(gymnasium.Env):
     """
@@ -51,12 +53,7 @@ class TrucGymEnvMa(gymnasium.Env):
         self._pending_reward = 0.0
 
     def _flatten_obs(self, state) -> np.ndarray:
-        obs = state['obs']
-        if isinstance(obs, dict):
-            return np.concatenate(
-                [obs['obs_cartes'].flatten(), obs['obs_context']], axis=0
-            ).astype(np.float32)
-        return np.asarray(obs, dtype=np.float32)
+        return flatten_obs(state['obs'])
 
     def _reward_from_raw(self, state) -> float:
         raw = state.get('raw_obs', {})
