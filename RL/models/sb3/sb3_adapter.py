@@ -1,5 +1,6 @@
 import numpy as np
 from joc.entorn.cartes_accions import ACTION_LIST
+from RL.tools.obs_utils import flatten_obs
 
 N_ACTIONS = len(ACTION_LIST)
 
@@ -17,14 +18,7 @@ class SB3PPOEvalAgent:
         self.num_actions = n_actions
 
     def eval_step(self, state):
-        obs = state['obs']
-        if isinstance(obs, dict):
-            obs_flat = np.concatenate(
-                [obs['obs_cartes'].flatten(), obs['obs_context']], axis=0
-            ).astype(np.float32)
-        else:
-            obs_flat = np.asarray(obs, dtype=np.float32)
-
+        obs_flat = flatten_obs(state['obs'])
         action, _ = self.model.predict(
             obs_flat[np.newaxis],
             deterministic=True,
