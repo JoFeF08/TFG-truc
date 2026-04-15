@@ -5,7 +5,7 @@
 
 ## Índex Modular (Obsidian)
 
-Aquesta documentació està estructurada en mòduls temàtics formant un graf interactiu. Els documents s'organitzen seguint la lectura natural del projecte: primer l'arquitectura general, després la lògica del joc i els entorns RL, després els models disponibles, i finalment les dues fases experimentals (Fase 1 — comparativa d'algorismes, i Fase 2 — curriculum learning).
+Aquesta documentació està estructurada en mòduls temàtics formant un graf interactiu. Els documents s'organitzen seguint la lectura natural del projecte: primer l'arquitectura general, després la lògica del joc i els entorns RL, després els models disponibles, i finalment les fases experimentals (Fase 1 — comparativa d'algorismes, Fase 2 — curriculum learning, Fase 3 — feature extractor preentrenat).
 
 - [[1_Arquitectura_MVC]]: Arquitectura MVC del joc interactiu, contractes de Vista i Model.
 - [[2_Logica_Joc]]: Motor lògic del joc (`TrucGame` i `TrucGameMa`) i sistema de *reward shaping*.
@@ -15,6 +15,9 @@ Aquesta documentació està estructurada en mòduls temàtics formant un graf in
 - [[6_Fase1_Resultats]]: Resultats dels experiments de la Fase 1 (per steps fixos i per temps fix).
 - [[7_Fase2_MarcTeoric]]: Fase 2 — Marc teòric: entorn per mans (`TrucGameMa`/`TrucEnvMa`/`TrucGymEnvMa`) i el concepte de *curriculum learning* aplicat al Truc.
 - [[8_Fase2_Implementacio]]: Fase 2 — Implementació i resultats: disseny experimental (control vs curriculum), scripts d'entrenament i anàlisi de resultats.
+- [[checkpoint-1]]: Tancament de Fase 1 i Fase 2 — conclusions, decisió dels dos models (DQN-SB3 i PPO-SB3) que continuen a Fase 3.
+- [[10_Fase3_MarcTeoric]]: Fase 3 — Marc teòric: integració de `CosMultiInput` preentrenat als models SB3 i els tres règims (scratch / frozen / finetune).
+- [[11_Fase3_Implementacio]]: Fase 3 — Implementació: embolcall `CosMultiInputSB3`, script `entrenament_fase3.py` i disseny de les 6 execucions comparatives.
 
 ---
 
