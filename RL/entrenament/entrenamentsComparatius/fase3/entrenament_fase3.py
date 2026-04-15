@@ -52,20 +52,32 @@ from RL.entrenament.entrenamentsComparatius.fase2.entrenament_fase2_curriculum i
 
 def _aplicar_variant(model, variant: str, pesos_cos: str | None, lr: float):
     """Carrega pesos i/o congela el cos segons la variant escollida."""
-    extractor = model.policy.features_extractor
+    # Per a DQN l'extractor és a q_net i q_net_target, per a PPO està a model.policy
+    if isinstance(model, SB3DQN):
+        extractors = [model.policy.q_net.features_extractor, model.policy.q_net_target.features_extractor]
+    else:
+        # PPO i altres
+        extractors = [getattr(model.policy, "features_extractor", None)]
 
     if variant in ("frozen", "finetune"):
         if pesos_cos is None:
             raise ValueError(f"variant={variant!r} requereix --pesos_cos")
         if not Path(pesos_cos).exists():
             raise FileNotFoundError(f"No existeix: {pesos_cos}")
-        extractor.carregar_pesos_preentrenats(pesos_cos)
-        # Moure al mateix device que la policy.
-        extractor.to(model.policy.device)
+        
+        for extractor in extractors:
+            if extractor is not None:
+                extractor.carregar_pesos_preentrenats(pesos_cos)
+                # Moure al mateix device que la policy.
+                extractor.to(model.policy.device)
+        
         print(f"[fase3] Pesos preentrenats carregats: {pesos_cos}")
 
     if variant == "frozen":
-        extractor.congelar_cos()
+        for extractor in extractors:
+            if extractor is not None:
+                extractor.congelar_cos()
+        
         entrenables = [p for p in model.policy.parameters() if p.requires_grad]
         model.policy.optimizer = torch.optim.Adam(entrenables, lr=lr)
         n_tot = sum(p.numel() for p in model.policy.parameters())
