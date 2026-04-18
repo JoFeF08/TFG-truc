@@ -1,62 +1,50 @@
 #!/bin/bash
 # =============================================================================
-# Fase 3: Feature Extractor Preentrenat
-# 2 algorismes (DQN-SB3, PPO-SB3) × 3 variants (scratch, frozen, finetune) = 6 runs
+# Fase 3: Valor del Feature Extractor COS
+# 2 algorismes × 3 protocols nous (control_cos, curriculum_cos, mans_mlp) = 6 runs
+#
+# Execucions reutilitzades (no es tornen a córrer):
+#   - control sense COS  → Fase 2 (DQN 60.5%, PPO 35%)
+#   - curriculum sense COS → Fase 2 (DQN 56%, PPO 75%)
+#   - mans amb COS (scratch) → Fase 3.5 ppo_sb3_scratch / dqn_sb3_scratch
 #
 # Ús:
-#   bash RL/entrenament/entrenamentsComparatius/fase3/run_fase3.sh <PESOS_COS> [STEPS]
+#   bash RL/entrenament/entrenamentsComparatius/fase3/run_fase3.sh [STEPS]
 #
 # Arguments:
-#   PESOS_COS  — Ruta al best_pesos_cos_truc.pth (produït per preentrenar_cos.py).
-#                Obligatori per a les variants frozen i finetune.
-#   STEPS      — Steps per run (defecte 24000000).
+#   STEPS — Steps totals per run (defecte 24000000).
+#            Per al protocol curriculum es divideix en 12M+12M.
 # =============================================================================
 
 set -e
 
-if [[ $# -lt 1 ]]; then
-    echo "Ús: $0 <PESOS_COS> [STEPS]"
-    echo ""
-    echo "Exemple:"
-    echo "  $0 RL/entrenament/entrenamentEstatTruc/registres/15_04_26_a_les_1030/models/best_pesos_cos_truc.pth"
-    exit 1
-fi
-
-PESOS_COS="$1"
-STEPS=${2:-24000000}
-
-if [[ ! -f "$PESOS_COS" ]]; then
-    echo "ERROR: No existeix el fitxer de pesos: $PESOS_COS"
-    exit 1
-fi
+STEPS=${1:-24000000}
 
 SCRIPT="RL/entrenament/entrenamentsComparatius/fase3/entrenament_fase3.py"
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
-OUT_BASE="TFG_Doc/notebooks/3_feature_extractor_preentrenat/resultats_fase3_${TIMESTAMP}"
+OUT_BASE="TFG_Doc/notebooks/3_feature_extractor/resultats_fase3_${TIMESTAMP}"
 RESUM="${OUT_BASE}/resum_fase3.txt"
 
 export PYTHONPATH="$(pwd):$PYTHONPATH"
 
 mkdir -p "$OUT_BASE"
 
-echo "Fase 3: Feature Extractor Preentrenat - $(date)" > "$RESUM"
-echo "Pesos cos: ${PESOS_COS}" >> "$RESUM"
+echo "Fase 3: Valor del Feature Extractor COS - $(date)" > "$RESUM"
 echo "Steps per run: ${STEPS}" >> "$RESUM"
-echo "2 algorismes × 3 variants (scratch, frozen, finetune) = 6 runs" >> "$RESUM"
+echo "6 runs nous: control_cos × 2, curriculum_cos × 2, mans_mlp × 2" >> "$RESUM"
 echo "-------------------------------------------" >> "$RESUM"
 
 cleanup_zombies() {
-    # Mata qualsevol python3 de fase3 penjat (forkserver workers orfes de
-    # SubprocVecEnv, etc.) i deixa temps perquè el SO recuperi la RAM.
     pkill -9 -f "entrenament_fase3.py" 2>/dev/null || true
     pkill -9 -f "multiprocessing.forkserver" 2>/dev/null || true
     sleep 2
 }
 
-run_variant() {
+run_experiment() {
     local agent=$1
-    local variant=$2
-    local name="${agent}_${variant}"
+    local protocol=$2
+    local use_cos=$3   # "cos" o "mlp"
+    local name="${agent}_${protocol}_${use_cos}"
     local out_dir="${OUT_BASE}/${name}"
 
     echo ""
@@ -68,9 +56,9 @@ run_variant() {
 
     local START=$(date +%s)
 
-    local args=(--agent "$agent" --variant "$variant" --steps "$STEPS" --save_dir "$out_dir")
-    if [[ "$variant" != "scratch" ]]; then
-        args+=(--pesos_cos "$PESOS_COS")
+    local args=(--agent "$agent" --protocol "$protocol" --steps "$STEPS" --save_dir "$out_dir")
+    if [[ "$use_cos" == "cos" ]]; then
+        args+=(--cos)
     fi
 
     python3 "$SCRIPT" "${args[@]}"
@@ -84,22 +72,20 @@ run_variant() {
     echo "${name}: ${DURATION}s (${H}h ${M}m ${S}s)" >> "$RESUM"
     echo ">> ${name} completat en ${H}h ${M}m ${S}s"
 
-    # Neteja zombies i deixa que el SO alliberi RAM abans del pròxim run.
     cleanup_zombies
     echo ">> Pausa de 60s (cooldown RAM/GPU)..."
     sleep 60
 }
 
-# Si s'interromp el script, igualment matem els processos Python pendents.
 trap cleanup_zombies EXIT INT TERM
 
-# Ordre: primer DQN (3 variants), després PPO (3 variants).
-run_variant "dqn_sb3" "scratch"
-run_variant "dqn_sb3" "frozen"
-run_variant "dqn_sb3" "finetune"
-run_variant "ppo_sb3" "scratch"
-run_variant "ppo_sb3" "frozen"
-run_variant "ppo_sb3" "finetune"
+# 6 runs nous:
+run_experiment "ppo_sb3" "control"    "cos"
+run_experiment "dqn_sb3" "control"    "cos"
+run_experiment "ppo_sb3" "curriculum" "cos"
+run_experiment "dqn_sb3" "curriculum" "cos"
+run_experiment "ppo_sb3" "mans"       "mlp"
+run_experiment "dqn_sb3" "mans"       "mlp"
 
 echo "-------------------------------------------" >> "$RESUM"
 echo "Completat: $(date)" >> "$RESUM"
