@@ -28,53 +28,55 @@ Dos experiments: pressupost fix per steps (5M) i pressupost fix per temps (4h). 
 
 ## Fase 2 — Curriculum learning (mà → partida)
 
-Dos experiments paral·lels (12M+12M steps curriculum vs 24M steps control directe). Detall a [7_Fase2_MarcTeoric.md](7_Fase2_MarcTeoric.md) i [8_Fase2_Implementacio.md](8_Fase2_Implementacio.md).
+Dos experiments paral·lels (12M+12M steps curriculum vs 24M steps control directe). Detall complet a [7_Fase2_MarcTeoric.md](7_Fase2_MarcTeoric.md), [8_Fase2_Implementacio.md](8_Fase2_Implementacio.md) i `TFG_Doc/notebooks/2_curriculum_learning/comparacio_fase2.ipynb`.
 
-**Resultats aproximats de `metric` a les darreres avaluacions:**
+### Resultats reals (run 11–13 abr 2026)
 
-| Agent             |      Curric. mans |  Curric. partides |  Control partides |
-| :---------------- | ----------------: | ----------------: | ----------------: |
-| DQN-RLCard        |           ~17–18 |           ~15–20 |           ~15–18 |
-| NFSP-RLCard       |           ~19–24 |           ~20–23 |           ~20–22 |
-| **DQN-SB3** | **~68–74** | **~37–41** | **~49–54** |
-| **PPO-SB3** | **~74–84** |             ~5–8 |           ~11–18 |
+**Taula A — Comparació a 12M steps (mateix pressupost, avaluació sobre partides):**
 
-**Observacions clau:**
+| Agent | Control 12M | Curriculum 12M mans | Δ |
+|:--|--:|--:|--:|
+| DQN-RLCard | 18.2% | 26.0% | +7.8 pp |
+| NFSP-RLCard | 25.2% | 27.2% | +2.0 pp |
+| DQN-SB3 | 44.0% | **86.2%** | **+42.2 pp** |
+| PPO-SB3 | 30.8% | **87.2%** | **+56.5 pp** |
 
-1. **Entrenar per mà (recompensa densa) és dràsticament més fàcil**: els dos agents SB3 arriben al 70–85% de `metric` contra regles, quelcom inassolible a la Fase 1.
-2. **La transferència mà → partida no és gratuïta**:
-   - DQN-SB3 transfereix raonablement (74 → 40): perd la meitat del rendiment però es manté com a millor model a partides.
-   - PPO-SB3 **col·lapsa** (84 → 6): patró compatible amb *catastrophic forgetting* i amb el *mismatch* entre reward-shaping per mà i reward esparsa a nivell de partida.
-3. **Sorpresa del control**: per a DQN-SB3, entrenar 24M steps directament a partides (control, ~54) supera el curriculum a partides (~40). Per a aquest agent, el curriculum **només val la pena si el que importa és el sostre a nivell de mà**, no la partida final.
-4. **Els dos agents RLCard no es beneficien del curriculum**: es mantenen al voltant del sostre de la Fase 1 en totes dues configuracions. La limitació és estructural (xarxa + pipeline RLCard), no de formulació.
+**Taula B — Comparació a 24M steps totals (control vs curriculum mans+finetune):**
 
-**Quan ajuda el curriculum learning, en resum:**
+| Agent | Control 24M | Curriculum complet | Δ |
+|:--|--:|--:|--:|
+| DQN-RLCard | 52.0% | 22.2% | −29.8 pp ❌ |
+| NFSP-RLCard | 55.5% | 60.0% | +4.5 pp |
+| DQN-SB3 | 60.5% | 56.0% | −4.5 pp ≈ |
+| **PPO-SB3** | 35.0% | **75.0%** | **+40.0 pp** ✓✓ |
 
-- **Per mà**: ajuda sempre als models capaços d'aprendre (SB3). La recompensa densa i l'horitzó curt fan trivial el que abans era impossible.
-- **Per partida**: només ajuda si el model pot retenir i transferir el coneixement. DQN-SB3 hi perd, PPO-SB3 hi col·lapsa → cal arquitectura amb memòria o millor representació (motivació directa de Fase 3 i 4).
+### Conclusions
+
+**El curriculum millora el rendiment final condicionat a l'agent i al pressupost.** A 12M steps, tots 4 agents milloren entrenant sobre mans. A 24M steps (pressupost total), només 2 de 4 en surten beneficiats. El coll d'ampolla és la transferència, no l'aprenentatge inicial.
+
+**Els agents que es beneficien més són els on-policy (PPO).** L'expectativa inicial era la contrària — es temia oblit catastròfic de PPO — però el resultat és l'invers: PPO és precisament qui més necessita reward dens per arrencar. Amb episodis curts i reward dens, PPO arriba al 87.2% sobre mans i conserva el 75% al finetune sobre partides: **el millor resultat del TFG fins a la data**.
+
+**Sorpresa del control DQN-SB3:** entrenar 24M steps directament sobre partides (60.5%) supera el curriculum (56.0%). Per a DQN-SB3, el curriculum només aporta si el que es vol maximitzar és el sostre a mans (86%), no el resultat final a partides.
 
 ## Decisió: models que continuen a la Fase 3
 
-Els dos models seleccionats són:
+Els dos models seleccionats per a les fases següents són **DQN-SB3** i **PPO-SB3**.
 
-### 1. DQN-SB3 — *el baseline robust*
+### 1. PPO-SB3 — *el gran beneficiari i nou baseline*
 
-- Millor `metric` global a partides (fins a 54% en control, 41% en curriculum).
-- Bona estabilitat, *throughput* raonable (~3h 30m per experiment).
-- Transfereix decentment mà → partida, fet que el converteix en el candidat natural per mesurar **guanys nets** de les millores arquitectòniques de les fases 3–4.
-- Representa la família *value-based off-policy*.
+- **Millor resultat del TFG**: 75% contra `AgentRegles` amb curriculum complet (+40 pp sobre el seu propi control).
+- **Millor aprenent a mans**: 87.2%, empatat amb DQN-SB3 però amb la meitat del cost computacional (~40 min vs 5.5h per run).
+- La narrativa experimental és clara: PPO no tenia problema de capacitat, sinó de senyal d'aprenentatge. El curriculum ho resol.
+- Throughput excel·lent permet iterar ràpidament a Fase 3.
 
-### 2. PPO-SB3 — *el cas interessant a millorar*
+### 2. DQN-SB3 — *el baseline robust*
 
-- **Millor aprenent a nivell de mà** (fins a 84% de `metric`), però amb el pitjor comportament a partides.
-- El seu problema no és capacitat sinó **context**: no reté estructura temporal a llarg termini ni manté coherència entre mans d'una mateixa partida.
-- És **precisament** el tipus de model que hauria de beneficiar-se més de:
-  - **Fase 3**: un *feature extractor* preentrenat que li doni una representació rica i estable de l'estat del joc.
-  - **Fase 4**: un mòdul recurrent (LSTM/GRU) que resolgui el problema de memòria entre mans.
-- Representa la família *policy-gradient on-policy* i dona la **millor narrativa experimental** del TFG: un model amb sostre molt alt localment que s'arregla progressivament amb millores arquitectòniques.
-- Throughput excel·lent (~37 min per experiment), permet iterar ràpid a les fases següents.
+- Millor rendiment a partides sense curriculum (60.5% control a 24M).
+- Sostre de 86.2% a mans: el màxim assolit en entrenament sobre mans aïllades.
+- Representa la família *value-based off-policy* i és el contrapunt natural a PPO.
+- Throughput acceptable (~5.5h per run) per a experiments llargs com Fase 3.
 
 ### Models descartats
 
-- **DQN-RLCard**: mateixa família que DQN-SB3 amb resultats consistentment pitjors en tots els experiments. No aporta informació addicional.
-- **NFSP-RLCard**: teòricament atractiu per jocs d'informació imperfecta, però a la pràctica és l'algorisme **més lent** (17h per experiment), amb una `metric` mitjana que no justifica el cost, i cap evidència que escali bé amb més còmput (Fase 1 experiment per temps ja ho va mostrar).
+- **DQN-RLCard**: oblit catastròfic sever al finetune (col·lapse a 22%), resultats consistentment inferiors a DQN-SB3 en tots els experiments. Descartada la seva integració amb càrrega de pesos externs fins que s'estabilitzi el pipeline.
+- **NFSP-RLCard**: l'algorisme més lent (~17h per run), `metric` que no supera el 60%, i cap evidència d'escalabilitat amb més còmput (confirmat ja a Fase 1). Benefici massa modest per al cost.
