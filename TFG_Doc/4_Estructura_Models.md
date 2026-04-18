@@ -6,15 +6,17 @@ Aquesta secció detalla l'estructura i organització de la subcarpeta `RL/models
 RL/models/
 ├── core/
 │   ├── feature_extractor.py   # CosMultiInput + ModelPreEntrenament
-│   ├── obs_adapter.py         # Wrappers per aplanar observacions
 │   └── loader.py              # Factoria de models a partir d'una spec
 ├── rlcard_legacy/
 │   └── model_adapter.py       # Pont entre agents RLCard i TrucModel
 ├── sb3/
-│   └── sb3_adapter.py         # SB3PPOEvalAgent per avaluació uniforme
+│   ├── sb3_adapter.py              # SB3PPOEvalAgent per avaluació uniforme
+│   └── sb3_features_extractor.py   # CosMultiInputSB3 (embolcall per SB3)
 └── model_propi/
     └── agent_regles.py        # Agent Rule-Based estocàstic
 ```
+
+> L'aplanament de l'observació (216 + 24 → 240) viu en una única funció canònica a [RL/tools/obs_utils.py](../RL/tools/obs_utils.py). Qualsevol lloc del codi que necessiti un vector pla (els wrappers Gymnasium, `SB3PPOEvalAgent`, els scripts d'entrenament) la importa des d'allà.
 
 ## `core/` — Peces centrals compartides
 
@@ -47,30 +49,25 @@ També es defineix **`ModelPreEntrenament`**, que combina el `CosMultiInput` amb
 
 Aquests tres objectius auxiliars forcen el cos a aprendre representacions útils del joc (coneixement d'envit, legalitat, força relativa) abans del pas a RL pur.
 
-### `obs_adapter.py`
-
-Conté utilitats per **aplanar l'observació** del diccionari nadiu `{obs_cartes, obs_context}` a un vector pla de 239 dimensions. S'utilitza via *monkey-patching* del mètode `_extract_state` de l'entorn:
-
-```python
-def wrap_env_aplanat(env):
-    original = env._extract_state
-    def _extract_patched(self, state):
-        extracted = original(state)
-        if isinstance(extracted['obs'], dict):
-            extracted['obs'] = np.concatenate([
-                extracted['obs']['obs_cartes'].flatten(),
-                extracted['obs']['obs_context'],
-            ], axis=0).astype(np.float32)
-        return extracted
-    env._extract_state = types.MethodType(_extract_patched, env)
-    return env
-```
-
-Aquest pattern és necessari perquè tant els agents DQN/NFSP de **RLCard** com les `MlpPolicy` de **SB3** esperen un vector pla, no un diccionari multi-entrada.
-
 ### `loader.py`
 
-Factory `crear_model(spec, env_config)` que construeix un model segons un diccionari d'especificació (`{"tipus": "...", "ruta": "..."}`). Retorna una instància que compleix el protocol **`TrucModel`** (mètode `triar_accio(estat) -> int`), utilitzat per la capa MVC (`ModelInteractiu`) per injectar bots a les partides interactives.
+Factory `crear_model(spec, env_config)` que construeix un model segons un diccionari d'especificació. Retorna una instància que compleix el protocol **`TrucModel`** (mètode `triar_accio(estat) -> int`), utilitzat per la capa MVC (`ModelInteractiu`) per injectar bots a les partides interactives.
+
+Tipus suportats:
+
+| `tipus` | Camps addicionals | Retorna |
+|:--|:--|:--|
+| `"huma"` / `"default"` | — | `None` (el controlador gestiona l'acció) |
+| `"regles"` | `seed` (opcional) | `AgentRegles` envoltat amb `_RLCardModelAdapter` |
+| `"sb3"` | `ruta` (.zip), `algorisme` ∈ {`"ppo"`, `"dqn"`} (defecte `"ppo"`) | model SB3 carregat via `PPO.load`/`DQN.load` envoltat amb `SB3PPOEvalAgent` + `_RLCardModelAdapter` |
+
+Exemple per injectar un agent PPO-SB3 de Fase 3 a una partida interactiva:
+
+```python
+spec = {"tipus": "sb3", "algorisme": "ppo",
+        "ruta": "TFG_Doc/notebooks/3_feature_extractor_preentrenat/resultats_fase3_XXX/ppo_sb3_finetune/best.zip"}
+model = crear_model(spec, env_config)
+```
 
 ## `rlcard_legacy/` — Pont amb agents RLCard
 

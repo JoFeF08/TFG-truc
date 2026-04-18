@@ -47,7 +47,8 @@ L'objectiu principal és proporcionar un entorn robust per simular partides de T
   - `vista/`: Interfícies gràfiques (consola i escriptori, amb recursos a `img_iu/`).
 - `RL/`: Flux de treball de Reinforcement Learning.
   - `models/`: Arquitectures i agents.
-    - `core/`: `feature_extractor.py` (`CosMultiInput`, `ModelPreEntrenament`), `obs_adapter.py`, `loader.py`.
+    - `core/`: `feature_extractor.py` (`CosMultiInput`, `ModelPreEntrenament`), `loader.py`.
+  - `tools/`: `obs_utils.py` (font única de `flatten_obs`), `exportar_pesos.py`, `test_comparativa.py`.
     - `rlcard_legacy/`: `model_adapter.py` (wrapper per connectar agents RLCard amb el nostre loader).
     - `sb3/`: `sb3_adapter.py` (`SB3PPOEvalAgent` per avaluar models SB3 dins el pipeline de RLCard).
     - `model_propi/`: `agent_regles.py` (agent Rule-Based estocàstic).
