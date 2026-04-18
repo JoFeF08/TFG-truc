@@ -11,18 +11,18 @@ L'anàlisi s'elabora al notebook `TFG_Doc/notebooks/1_comparacio_inicial/compara
 
 ## Experiment 1 — Pressupost fix per steps (5M steps)
 
-Data: **9 abril 2026**. Pressupost per agent: **5 000 000 timesteps**.
+Pressupost per agent: **5 000 000 timesteps**.
 
 ### Temps de rellotge consumit
 
 Extret de `resum_temps.txt`:
 
-| Agent | Temps total | Throughput (steps/s) |
-|:--|--:|--:|
-| PPO-SB3 | `511 s` (≈ 8 m 31 s) | ~9 780 |
-| DQN-SB3 | `2 584 s` (≈ 43 m) | ~1 940 |
-| DQN-RLCard | `3 272 s` (≈ 54 m) | ~1 530 |
-| NFSP-RLCard | `13 943 s` (≈ 3 h 52 m) | ~360 |
+| Agent       |                Temps total | Throughput (steps/s) |
+| :---------- | -------------------------: | -------------------: |
+| PPO-SB3     |    `511 s` (≈ 8 m 31 s) |               ~9 780 |
+| DQN-SB3     |      `2 584 s` (≈ 43 m) |               ~1 940 |
+| DQN-RLCard  |      `3 272 s` (≈ 54 m) |               ~1 530 |
+| NFSP-RLCard | `13 943 s` (≈ 3 h 52 m) |                 ~360 |
 
 **Observacions clau**:
 
@@ -32,12 +32,12 @@ Extret de `resum_temps.txt`:
 
 ### Mètriques finals aproximades (últimes 5 files del log)
 
-| Agent | `wr_random` (darreres eval) | `wr_regles` (darreres eval) | `metric` |
-|:--|--:|--:|--:|
-| DQN-RLCard | 58–80% | 11–20% | ~23–35 |
-| NFSP-RLCard | 68–76% | 14–36% | ~30–46 |
-| DQN-SB3 | 44–50% | 24–42% | ~30–43 |
-| PPO-SB3 | 10–24% | 20–30% | ~18–26 |
+| Agent       | `wr_random` (darreres eval) | `wr_regles` (darreres eval) | `metric` |
+| :---------- | ----------------------------: | ----------------------------: | ---------: |
+| DQN-RLCard  |                       58–80% |                       11–20% |    ~23–35 |
+| NFSP-RLCard |                       68–76% |                       14–36% |    ~30–46 |
+| DQN-SB3     |                       44–50% |                       24–42% |    ~30–43 |
+| PPO-SB3     |                       10–24% |                       20–30% |    ~18–26 |
 
 **Lectura**:
 
@@ -48,27 +48,27 @@ Extret de `resum_temps.txt`:
 
 ## Experiment 2 — Pressupost fix per temps (4 h)
 
-Data: **9–10 abril 2026**. Pressupost per agent: **14 400 s (4 h)**.
+Pressupost per agent: **14 400 s (4 h)**.
 
 ### Steps consumits en 4 hores
 
-| Agent | Steps aconseguits |
-|:--|--:|
-| PPO-SB3 | **~157 000 000** (≈ 157M) |
-| DQN-SB3 | ~34 000 000 (≈ 34M) |
-| DQN-RLCard | ~17 000 000 (≈ 17M) |
-| NFSP-RLCard | ~5 000 000 (≈ 5M) |
+| Agent       |                Steps aconseguits |
+| :---------- | -------------------------------: |
+| PPO-SB3     | **~157 000 000** (≈ 157M) |
+| DQN-SB3     |             ~34 000 000 (≈ 34M) |
+| DQN-RLCard  |             ~17 000 000 (≈ 17M) |
+| NFSP-RLCard |               ~5 000 000 (≈ 5M) |
 
 La diferència de throughput és brutal: PPO-SB3 fa **30× més steps** que NFSP-RLCard en el mateix temps. Aquest és precisament el motiu pel qual les comparacions purament per steps penalitzen injustament els algorismes paral·lelitzats.
 
 ### Mètriques finals aproximades (darreres 5 files)
 
-| Agent | `wr_random` (darreres) | `wr_regles` (darreres) | `metric` |
-|:--|--:|--:|--:|
-| DQN-RLCard | 60–86% | 7–21% | ~21–34 |
-| NFSP-RLCard | 64–84% | 17–23% | ~30–35 |
-| DQN-SB3 | 22–44% | 13–23% | ~16–28 |
-| PPO-SB3 | 34–54% | 17–32% | ~21–35 |
+| Agent       | `wr_random` (darreres) | `wr_regles` (darreres) | `metric` |
+| :---------- | -----------------------: | -----------------------: | ---------: |
+| DQN-RLCard  |                  60–86% |                   7–21% |    ~21–34 |
+| NFSP-RLCard |                  64–84% |                  17–23% |    ~30–35 |
+| DQN-SB3     |                  22–44% |                  13–23% |    ~16–28 |
+| PPO-SB3     |                  34–54% |                  17–32% |    ~21–35 |
 
 **Lectura**:
 
@@ -82,5 +82,3 @@ La diferència de throughput és brutal: PPO-SB3 fa **30× més steps** que NFSP
 2. **PPO té un problema de sample efficiency** a aquest entorn: amb 5M steps és l'agent pitjor, amb 157M steps tot just iguala els altres. L'entorn de partida sencera (horizon llarg, reward final molt sparse, 18 accions) no és la condició ideal per PPO.
 3. **El coll d'ampolla no és el temps de càlcul**, és el **senyal d'aprenentatge**. Donar més temps als algorismes no ha canviat qualitativament els resultats, només els ha fet oscil·lar al voltant del mateix sostre.
 4. **Conclusió estratègica**: cal canviar la formulació del problema, no empènyer més fort el mateix hammer. Aquesta és la motivació de la Fase 2 — utilitzar **curriculum learning** per aprendre primer la tàctica local (1 episodi = 1 mà, reward dens), i després fer finetune a partides senceres. Vegeu [[7_Fase2_MarcTeoric]] i [[8_Fase2_Implementacio]].
-
-> **Nota sobre la reproducibilitat**: Tots els experiments fixen `SEED = 42`, però com que els algorismes SB3 i l'AgentRegles tenen components estocàstics en l'avaluació, les mètriques tenen una **variància d'evaluació de ±5% aproximadament**. Les diferències més petites que aquest llindar no s'haurien d'interpretar com a significatives. El notebook `comparacio_fase1.ipynb` aplica *smoothing* (finestres de ≥5 punts) per mitigar aquest soroll.

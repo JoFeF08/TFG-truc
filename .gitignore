@@ -74,6 +74,7 @@ RL/entrenament/entrenamentEstatTruc/registres/*
 RL/entrenament/entrenamentRLCard/registres/*
 RL/entrenament/entrenamentsPropis/*/registres/*
 TFG_Doc/notebooks/1_comparacio_inicial/resultats_*
+TFG_Doc/notebooks/3_feature_extractor/resultats_*
 
 # Python unified pycache (bytecode when using PYTHONPYCACHEPREFIX)
 temp/
