@@ -20,9 +20,9 @@ set -e
 
 STEPS=${1:-24000000}
 
-SCRIPT="RL/entrenament/entrenamentsComparatius/fase3/entrenament_fase3.py"
+SCRIPT="RL/entrenament/entrenamentsComparatius/fase3/fase30/entrenament_fase3.py"
 TIMESTAMP=$(date +"%d_%m_%H%Mh")
-OUT_BASE="TFG_Doc/notebooks/3_feature_extractor/resultats_fase3_${TIMESTAMP}"
+OUT_BASE="TFG_Doc/notebooks/3_feature_extractor/resultats/resultats_fase3_${TIMESTAMP}"
 RESUM="${OUT_BASE}/resum_fase3.txt"
 
 export PYTHONPATH="$(pwd):$PYTHONPATH"
