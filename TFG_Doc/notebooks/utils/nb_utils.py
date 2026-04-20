@@ -49,6 +49,41 @@ def carregar_logs(carpeta_base: Path, agents: list,
     return dades
 
 
+def carregar_curriculum(carpeta: Path, subfolder: str) -> pd.DataFrame | None:
+    """Concatena training_log_mans + training_log_partides amb steps acumulats.
+    Retorna None si no existeix training_log_partides.csv."""
+    p_mans     = carpeta / subfolder / 'training_log_mans.csv'
+    p_partides = carpeta / subfolder / 'training_log_partides.csv'
+    if not p_partides.exists():
+        return None
+    df_p = pd.read_csv(p_partides)
+    if p_mans.exists():
+        df_m = pd.read_csv(p_mans)
+        offset = int(df_m['step'].max()) if len(df_m) > 0 else 0
+        df_p = df_p.copy()
+        df_p['step'] = df_p['step'] + offset
+    return df_p
+
+
+def carregar_dades_tag(carpeta: Path, agents: list,
+                       protocols: list, tag: str) -> dict:
+    """Retorna dades[agent][protocol] = DataFrame per a una variant (tag).
+    Nom de subcarpeta: {agent}_{protocol}_{tag}.
+    Protocol 'curriculum': usa carregar_curriculum (steps acumulats)."""
+    dades = {a: {} for a in agents}
+    for agent in agents:
+        for protocol in protocols:
+            sub = f'{agent}_{protocol}_{tag}'
+            if protocol == 'curriculum':
+                df = carregar_curriculum(carpeta, sub)
+            else:
+                path = carpeta / sub / 'training_log.csv'
+                df = pd.read_csv(path) if path.exists() else None
+            if df is not None:
+                dades[agent][protocol] = df
+    return dades
+
+
 def llegir_resum_txt(path: Path) -> str:
     """Llegeix i retorna el contingut d'un fitxer resum_*.txt."""
     if path.exists():
@@ -94,3 +129,9 @@ LWIDTH_VARIANTS = {
     'frozen':   2.2,
     'finetune': 2.0,
 }
+
+# Fase 30 — COS vs MLP
+COLORS_TAG = {'cos': '#3498db', 'mlp': '#95a5a6'}
+LABELS_TAG = {'cos': 'Amb COS', 'mlp': 'Sense COS (MLP)'}
+LSTYLE_TAG = {'cos': '-',       'mlp': '--'}
+LWIDTH_TAG = {'cos': 2.2,       'mlp': 1.8}
