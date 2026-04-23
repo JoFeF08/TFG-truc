@@ -20,9 +20,17 @@ FORCA_TOP = 90  # 3s, manilles, asos forts, B11, O10
 class AgentRegles:
     use_raw = False
 
-    def __init__(self, num_actions=19, seed=None):
+    def __init__(self, num_actions=19, seed=None,
+                 truc_agressio: float = 1.0,
+                 envit_agressio: float = 1.0,
+                 farol_prob: float = 0.12,
+                 resposta_truc: float = 1.0):
         self.num_actions = num_actions
         self.rng = random.Random(seed)
+        self.truc_agressio = float(truc_agressio)
+        self.envit_agressio = float(envit_agressio)
+        self.farol_prob = float(farol_prob)
+        self.resposta_truc = float(resposta_truc)
 
     def step(self, state):
         action, _ = self.eval_step(state)
@@ -118,8 +126,8 @@ class AgentRegles:
         perill_rival = es / per_rival   # > 1: rival guanya el joc si guanya l'envit
         necessitat   = es / per_propi   # > 1: nosaltres guanyem si guanyem l'envit
 
-        llindar_puja    = 30
-        llindar_accepta = 25
+        llindar_puja    = 30 / self.envit_agressio
+        llindar_accepta = 25 / self.envit_agressio
 
         # Rival a punt de guanyar -> ser conservadors (no regalar punts)
         if perill_rival >= 1.0:
@@ -186,6 +194,9 @@ class AgentRegles:
 
         # Soroll estocàstic (±5)
         ajust_forca += self.rng.randint(-5, 5)
+
+        # Ajust per paràmetre de comportament: >1 accepta més; <1 exigeix més
+        ajust_forca -= 15 * (self.resposta_truc - 1.0)
 
         # Ja hem guanyat 1 ronda
         if guanyades >= 1:
@@ -264,10 +275,11 @@ class AgentRegles:
             return None
 
         if guanyades >= 1 and n_top >= 1:
-            return APOSTAR_TRUC
+            if self.rng.random() < self.truc_agressio:
+                return APOSTAR_TRUC
 
-        # Bluff
-        if guanyades >= 1 and self.rng.random() < 0.12:
+        # Bluff (parametritzat)
+        if guanyades >= 1 and self.rng.random() < self.farol_prob:
             return APOSTAR_TRUC
 
         # Altres Casos
@@ -275,14 +287,20 @@ class AgentRegles:
             return APOSTAR_TRUC
 
         if guanyades == 0 and perdudes == 0 and rival_visible and n_top >= 2:
-            return APOSTAR_TRUC
+            if self.rng.random() < self.truc_agressio:
+                return APOSTAR_TRUC
 
-        if perdudes >= 1 and n_top >= 2 and n_cartes >= 2 and self.rng.random() < 0.40:
+        if perdudes >= 1 and n_top >= 2 and n_cartes >= 2 and self.rng.random() < 0.40 * self.truc_agressio:
             return APOSTAR_TRUC
 
         # Mes agressiu si anem per darrere
         if avantatge < -6 and n_top >= 1 and guanyades >= 1:
             return APOSTAR_TRUC
+
+        # Farol extra quan truc_agressio > 1
+        if self.truc_agressio > 1.0 and guanyades == 0 and perdudes == 0:
+            if self.rng.random() < self.farol_prob * (self.truc_agressio - 1.0):
+                return APOSTAR_TRUC
 
         return None
 
