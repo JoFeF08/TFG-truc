@@ -39,7 +39,12 @@ def resource_path(relative_path):
 
 
 MODEL_PATH = resource_path("best.pt")
-TIPUS_AGENT = "ppo_mlp"
+TIPUS_AGENT = "sb3"          # per Fase 4 LSTM: "sb3" amb algorisme="ppo_lstm"
+ALGORISME    = "ppo"         # "ppo" | "dqn" | "ppo_lstm"
+
+# PARTIDES_SESSIO > 1 amb algorisme="ppo_lstm" manté l'estat LSTM entre partides
+# consecutives, permetent a l'agent adaptar-se a l'estil del jugador humà.
+PARTIDES_SESSIO = 1
 
 config = {
     "num_jugadors": 2,
@@ -50,23 +55,36 @@ config = {
         0: {"tipus": "huma"},
         1: {
             "tipus": TIPUS_AGENT,
+            "algorisme": ALGORISME,
             "ruta": MODEL_PATH
         },
     },
 }
 
 
+def _reset_memoria_agents(controlador):
+    """Crida reset_memoria() a tots els agents IA del controlador (si el suporten)."""
+    try:
+        models = getattr(controlador, '_models', None) or getattr(controlador.model, '_models', None)
+        if models:
+            for m in models.values():
+                if m is not None and hasattr(m, 'reset_memoria'):
+                    m.reset_memoria()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     print("Iniciant demo.py...")
-    print("Creant VistaDesktop...")
     vista = VistaDesktop()
-    print("Creant ModelInteractiu...")
     model = ModelInteractiu()
-    print("Creant Controlador...")
     controlador = Controlador(vista, model)
     try:
-        print("Executant partida...")
-        controlador.executar_partida(override_config=config)
+        for partida_idx in range(PARTIDES_SESSIO):
+            if partida_idx == 0:
+                _reset_memoria_agents(controlador)  # inici de sessió
+            print(f"Executant partida {partida_idx + 1}/{PARTIDES_SESSIO}...")
+            controlador.executar_partida(override_config=config)
     except KeyboardInterrupt:
         print("Sortint...")
         vista.mostrar_sortint()

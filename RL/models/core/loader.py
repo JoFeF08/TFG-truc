@@ -48,14 +48,25 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
         if algorisme == "ppo":
             from stable_baselines3 import PPO
             sb3_model = PPO.load(ruta)
-        
+            env = _build_env(env_config)
+            eval_agent = SB3PPOEvalAgent(sb3_model, n_actions=env.num_actions)
+
         elif algorisme == "dqn":
             from stable_baselines3 import DQN
             sb3_model = DQN.load(ruta)
+            env = _build_env(env_config)
+            eval_agent = SB3PPOEvalAgent(sb3_model, n_actions=env.num_actions)
+
+        elif algorisme == "ppo_lstm":
+            from sb3_contrib import RecurrentPPO
+            from RL.models.sb3.sb3_lstm_eval_agent import SB3LSTMEvalAgent
+            sb3_model = RecurrentPPO.load(ruta)
+            env = _build_env(env_config)
+            eval_agent = SB3LSTMEvalAgent(sb3_model, num_actions=env.num_actions)
+
         else:
             raise ValueError(f"algorisme SB3 desconegut: {algorisme!r}")
-        env = _build_env(env_config)
-        eval_agent = SB3PPOEvalAgent(sb3_model, n_actions=env.num_actions)
+
         return _RLCardModelAdapter(eval_agent, env._extract_state)
 
     return None
