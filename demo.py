@@ -42,8 +42,6 @@ MODEL_PATH = resource_path("best.pt")
 TIPUS_AGENT = "sb3"          # per Fase 4 LSTM: "sb3" amb algorisme="ppo_lstm"
 ALGORISME    = "ppo"         # "ppo" | "dqn" | "ppo_lstm"
 
-# PARTIDES_SESSIO > 1 amb algorisme="ppo_lstm" manté l'estat LSTM entre partides
-# consecutives, permetent a l'agent adaptar-se a l'estil del jugador humà.
 PARTIDES_SESSIO = 1
 
 config = {
