@@ -46,6 +46,7 @@ from RL.entrenament.entrenamentsComparatius.fase2.entrenament_fase2_curriculum i
     NUM_ENVS_PPO, PPO_LR, PPO_GAMMA, PPO_GAE, PPO_CLIP, PPO_ENT, PPO_VF,
     PPO_EPOCHS, PPO_MINIBATCH, PPO_N_STEPS,
     init_log, append_log, SB3EvalAgent,
+    evaluar_agent, ENV_CONFIG, EVAL_GAMES_RANDOM, EVAL_GAMES_REGLES,
 )
 
 from joc.entorn.gym_env import TrucGymEnv
@@ -96,16 +97,28 @@ def _aplicar_frozen(model, pesos_cos: str, lr: float):
 
 
 def init_log_sessions(path: Path):
-    """Log amb columnes addicionals per WR per posició de partida (1..5)."""
-    header = "step,wr_random,wr_regles,metric,wr_pos_1,wr_pos_2,wr_pos_3,wr_pos_4,wr_pos_5,elapsed\n"
+    """Log amb mètrica estàndard (comparable amb altres fases) + dades de sessions."""
+    header = (
+        "step,"
+        "wr_random,wr_regles,metric,"
+        "wr_random_pool,wr_regles_pool,metric_pool,"
+        "wr_pos_1,wr_pos_2,wr_pos_3,wr_pos_4,wr_pos_5,"
+        "elapsed\n"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(header)
 
 
-def append_log_sessions(path: Path, step: int, wr_r: float, wr_g: float,
-                        metric: float, wr_pos: list[float], elapsed: float):
-    cols = [str(step), f"{wr_r:.4f}", f"{wr_g:.4f}", f"{metric:.4f}"]
+def append_log_sessions(path: Path, step: int,
+                        wr_r_std: float, wr_g_std: float, metric_std: float,
+                        wr_r_pool: float, wr_g_pool: float, metric_pool: float,
+                        wr_pos: list[float], elapsed: float):
+    cols = [
+        str(step),
+        f"{wr_r_std:.4f}", f"{wr_g_std:.4f}", f"{metric_std:.4f}",
+        f"{wr_r_pool:.4f}", f"{wr_g_pool:.4f}", f"{metric_pool:.4f}",
+    ]
     cols += [f"{w:.4f}" for w in wr_pos]
     cols.append(f"{elapsed:.2f}")
     with open(path, "a", encoding="utf-8") as f:
@@ -215,6 +228,7 @@ def _ppo_ablacio(save_dir: Path, timesteps: int, device,
 
     _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
 
+    regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
     best_metric = [-1.0]
     best_zip    = save_dir / "best"
     t0          = time.time()
@@ -229,22 +243,28 @@ def _ppo_ablacio(save_dir: Path, timesteps: int, device,
             if self.num_timesteps - self._last >= eval_every:
                 self._last = self.num_timesteps
                 agent = SB3EvalAgent(self.model)
-                wr_r, wr_g, metric, wr_pos = evaluar_sessions(
+                wr_r_std, wr_g_std, metric_std = evaluar_agent(
+                    agent, ENV_CONFIG, regles_eval,
+                    n_random=EVAL_GAMES_RANDOM, n_regles=EVAL_GAMES_REGLES,
+                )
+                wr_r_pool, wr_g_pool, metric_pool, wr_pos = evaluar_sessions(
                     agent, n_partides, N_SESSIONS_EVAL, N_SESSIONS_EVAL * 2,
                 )
                 elapsed = time.time() - t0
                 append_log_sessions(log_path, self.num_timesteps,
-                                    wr_r, wr_g, metric, wr_pos, elapsed)
-                if metric > best_metric[0]:
-                    best_metric[0] = metric
+                                    wr_r_std, wr_g_std, metric_std,
+                                    wr_r_pool, wr_g_pool, metric_pool,
+                                    wr_pos, elapsed)
+                if metric_std > best_metric[0]:
+                    best_metric[0] = metric_std
                     self.model.save(str(best_zip))
                     print(f"[{label} step {self.num_timesteps}] "
-                          f"rand={wr_r:.1f}% pool={wr_g:.1f}% "
-                          f"pos=[{','.join(f'{w:.0f}' for w in wr_pos)}] → nou millor!")
+                          f"std={metric_std:.1f}% (rand={wr_r_std:.1f}% reg={wr_g_std:.1f}%) "
+                          f"pool={wr_g_pool:.1f}% pos=[{','.join(f'{w:.0f}' for w in wr_pos)}] → nou millor!")
                 else:
                     print(f"[{label} step {self.num_timesteps}] "
-                          f"rand={wr_r:.1f}% pool={wr_g:.1f}% "
-                          f"pos=[{','.join(f'{w:.0f}' for w in wr_pos)}]")
+                          f"std={metric_std:.1f}% (rand={wr_r_std:.1f}% reg={wr_g_std:.1f}%) "
+                          f"pool={wr_g_pool:.1f}% pos=[{','.join(f'{w:.0f}' for w in wr_pos)}]")
             return True
 
     model.learn(total_timesteps=timesteps, callback=_Cb())
@@ -252,7 +272,7 @@ def _ppo_ablacio(save_dir: Path, timesteps: int, device,
     model.save(str(save_dir / "final"))
     if not (Path(str(best_zip) + ".zip")).exists():
         model.save(str(best_zip))
-    print(f"[{label}] Complet. Millor metric: {best_metric[0]:.2f}%")
+    print(f"[{label}] Complet. Millor metric (std): {best_metric[0]:.2f}%")
     return model
 
 
@@ -293,6 +313,7 @@ def _ppo_lstm_complet(save_dir: Path, timesteps: int, device,
 
     _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
 
+    regles_eval = AgentRegles(num_actions=N_ACTIONS, seed=789)
     best_metric = [-1.0]
     best_zip    = save_dir / "best"
     t0          = time.time()
@@ -307,22 +328,28 @@ def _ppo_lstm_complet(save_dir: Path, timesteps: int, device,
             if self.num_timesteps - self._last >= eval_every:
                 self._last = self.num_timesteps
                 agent = SB3LSTMEvalAgent(self.model, num_actions=N_ACTIONS)
-                wr_r, wr_g, metric, wr_pos = evaluar_sessions(
+                wr_r_std, wr_g_std, metric_std = evaluar_agent(
+                    agent, ENV_CONFIG, regles_eval,
+                    n_random=EVAL_GAMES_RANDOM, n_regles=EVAL_GAMES_REGLES,
+                )
+                wr_r_pool, wr_g_pool, metric_pool, wr_pos = evaluar_sessions(
                     agent, n_partides, N_SESSIONS_EVAL, N_SESSIONS_EVAL * 2,
                 )
                 elapsed = time.time() - t0
                 append_log_sessions(log_path, self.num_timesteps,
-                                    wr_r, wr_g, metric, wr_pos, elapsed)
-                if metric > best_metric[0]:
-                    best_metric[0] = metric
+                                    wr_r_std, wr_g_std, metric_std,
+                                    wr_r_pool, wr_g_pool, metric_pool,
+                                    wr_pos, elapsed)
+                if metric_std > best_metric[0]:
+                    best_metric[0] = metric_std
                     self.model.save(str(best_zip))
                     print(f"[{label} step {self.num_timesteps}] "
-                          f"rand={wr_r:.1f}% pool={wr_g:.1f}% "
-                          f"pos=[{','.join(f'{w:.0f}' for w in wr_pos)}] → nou millor!")
+                          f"std={metric_std:.1f}% (rand={wr_r_std:.1f}% reg={wr_g_std:.1f}%) "
+                          f"pool={wr_g_pool:.1f}% pos=[{','.join(f'{w:.0f}' for w in wr_pos)}] → nou millor!")
                 else:
                     print(f"[{label} step {self.num_timesteps}] "
-                          f"rand={wr_r:.1f}% pool={wr_g:.1f}% "
-                          f"pos=[{','.join(f'{w:.0f}' for w in wr_pos)}]")
+                          f"std={metric_std:.1f}% (rand={wr_r_std:.1f}% reg={wr_g_std:.1f}%) "
+                          f"pool={wr_g_pool:.1f}% pos=[{','.join(f'{w:.0f}' for w in wr_pos)}]")
             return True
 
     model.learn(total_timesteps=timesteps, callback=_Cb())
@@ -330,7 +357,7 @@ def _ppo_lstm_complet(save_dir: Path, timesteps: int, device,
     model.save(str(save_dir / "final"))
     if not (Path(str(best_zip) + ".zip")).exists():
         model.save(str(best_zip))
-    print(f"[{label}] Complet. Millor metric: {best_metric[0]:.2f}%")
+    print(f"[{label}] Complet. Millor metric (std): {best_metric[0]:.2f}%")
     return model
 
 
