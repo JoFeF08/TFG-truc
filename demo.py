@@ -38,7 +38,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-MODEL_PATH = resource_path("best.pt")
+MODEL_PATH = resource_path("TFG_Doc/notebooks/4_memoria/resultats/ppo_ablacio_pool/best.zip")
 TIPUS_AGENT = "sb3"          # per Fase 4 LSTM: "sb3" amb algorisme="ppo_lstm"
 ALGORISME    = "ppo"         # "ppo" | "dqn" | "ppo_lstm"
 

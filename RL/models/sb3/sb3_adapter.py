@@ -23,4 +23,8 @@ class SB3PPOEvalAgent:
             obs_flat[np.newaxis],
             deterministic=True,
         )
-        return int(action[0]), {}
+        action = int(action[0])
+        legal = list(state['legal_actions'].keys())
+        if action not in legal:
+            action = legal[0]
+        return action, {}

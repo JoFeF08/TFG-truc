@@ -1,8 +1,10 @@
-"""Entorn de sessions multi-partida per a Fase 4 (memòria cross-partides).
+"""Entorn de sessions multi-mà per a Fase 4 (memòria cross-mans).
 
-Un episodi RL = N partides consecutives contra el mateix oponent. L'oponent es
-samplea del pool al principi de cada sessió (a `reset()`). Això força l'LSTM a
-detectar el patró de l'oponent durant la sessió i adaptar la política.
+Un episodi RL = N mans consecutives contra el mateix oponent. Com que l'entorn
+intern és TrucGymEnvMa (episodi = 1 mà), el wrapper intercepta els terminated=True
+intermedis i els propaga només al final de les N mans. L'oponent es samplea del
+pool al principi de cada sessió (a `reset()`). Això força l'LSTM a acumular
+context cross-mans i potencialment detectar el patró de l'oponent.
 """
 import random
 import numpy as np

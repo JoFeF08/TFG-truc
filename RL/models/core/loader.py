@@ -47,14 +47,43 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
         
         if algorisme == "ppo":
             from stable_baselines3 import PPO
-            sb3_model = PPO.load(ruta)
             env = _build_env(env_config)
+            _orig_ppo = PPO.set_parameters
+            def _ppo_sense_optimizer(self, load_path_or_dict, exact_match=True, device="auto"):  # exact_match ignorat intencionalment
+                if isinstance(load_path_or_dict, dict):
+                    load_path_or_dict = {k: v for k, v in load_path_or_dict.items()
+                                         if "optimizer" not in k}
+                return _orig_ppo(self, load_path_or_dict, exact_match=False, device=device)
+            PPO.set_parameters = _ppo_sense_optimizer
+            try:
+                from RL.models.sb3.sb3_features_extractor import CosMultiInputSB3
+                sb3_model = PPO.load(ruta,
+                                     custom_objects={"features_extractor_class": CosMultiInputSB3},
+                                     device="cpu")
+            finally:
+                PPO.set_parameters = _orig_ppo
             eval_agent = SB3PPOEvalAgent(sb3_model, n_actions=env.num_actions)
 
         elif algorisme == "dqn":
             from stable_baselines3 import DQN
-            sb3_model = DQN.load(ruta)
+            from RL.models.sb3.sb3_features_extractor import CosMultiInputSB3
             env = _build_env(env_config)
+            # El model es va entrenar amb COS congelat → l'optimitzador guardat té
+            # menys grups de paràmetres que el model reconstruït. Per a inferència
+            # no cal l'optimitzador; el patchem per saltar-lo.
+            _orig = DQN.set_parameters
+            def _sense_optimizer(self, load_path_or_dict, exact_match=True, device="auto"):  # exact_match ignorat intencionalment
+                if isinstance(load_path_or_dict, dict):
+                    load_path_or_dict = {k: v for k, v in load_path_or_dict.items()
+                                         if "optimizer" not in k}
+                return _orig(self, load_path_or_dict, exact_match=False, device=device)
+            DQN.set_parameters = _sense_optimizer
+            try:
+                sb3_model = DQN.load(ruta,
+                                     custom_objects={"features_extractor_class": CosMultiInputSB3},
+                                     device="cpu")
+            finally:
+                DQN.set_parameters = _orig
             eval_agent = SB3PPOEvalAgent(sb3_model, n_actions=env.num_actions)
 
         elif algorisme == "ppo_lstm":
