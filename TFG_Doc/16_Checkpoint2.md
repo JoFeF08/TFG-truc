@@ -71,8 +71,8 @@ Nota: DQN frozen te el seu pic global a 23M steps (91.2%); aqui es mostra el seu
 
 | Run               | Memoria  | Pool | Pic metric a 12M | Step pic | Temps | Delta WR pos (*) |
 | :---------------- | :------- | :--- | ---------------: | -------: | ----: | ---------------: |
-| DQN frozen (F3.5) | No       | No   |           87.75% |     4.0M |    -- |               -- |
-| PPO frozen (F3.5) | No       | No   |           89.5%  |    11.0M |    -- |               -- |
+| DQN frozen (F3.5) | No       | No   |           87.75% |     4.0M | 2.14h |               -- |
+| PPO frozen (F3.5) | No       | No   |           89.5%  |    11.0M | 0.33h |               -- |
 | F4-ablacio        | No       | Si   |           86.0%  |     9.5M | 0.33h |         +4.3 pp  |
 | F4-complet        | LSTM 256 | Si   |           82.0%  |    10.0M | 15.2h |         +1.4 pp  |
 
