@@ -20,7 +20,7 @@ python RL/entrenament/entrenamentsComparatius/fase5/entrenament_fase5.py \
     --steps         "$STEPS"      \
     --save_dir      "$SAVE_DIR"   \
     --num_envs      32            \
-    --n_partides    5
+    --n_partides    1
 
 echo ""
 echo "=== Fase 5 completada ==="

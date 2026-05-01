@@ -296,11 +296,11 @@ def _ppo_selfplay(save_dir: Path, timesteps: int, device,
                     best_robust[0] = metric_robust
                     self.model.save(str(best_robust_zip))
 
-                sp_str = f"{wr_vs_self:.1f}%" if not np.isnan(wr_vs_self) else "nan"
+                exploit_str = f"{exploit_sp:.2f}" if not np.isnan(exploit_sp) else "nan"
                 print(
                     f"[{label} {t:>9,}] "
                     f"metric={metric:.1f}% robust={metric_robust:.1f}% "
-                    f"std={std_pool:.1f} exploit_sp={exploit_sp if not np.isnan(exploit_sp) else 'nan':.2f} "
+                    f"std={std_pool:.1f} exploit_sp={exploit_str} "
                     f"snaps={selfplay_pool.n_snapshots}{nou_millor}"
                 )
             return True
