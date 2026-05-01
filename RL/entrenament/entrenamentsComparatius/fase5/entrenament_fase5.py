@@ -52,7 +52,7 @@ from joc.entorn_ma.gym_env_sessio import TrucGymEnvSessio
 
 
 SNAPSHOT_EVERY  = 1_000_000
-MAX_SNAPSHOTS   = 6
+MAX_SNAPSHOTS   = 9
 LAMBDA_STD      = 0.5
 N_RECENT_EVAL   = 3
 N_SESSIONS_EVAL = 20
