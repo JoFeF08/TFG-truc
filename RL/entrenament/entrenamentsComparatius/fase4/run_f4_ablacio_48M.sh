@@ -4,7 +4,10 @@ set -e
 PESOS_COS=${1:?"Us: run_f4_ablacio_48M.sh <pesos_cos.pth> [steps]"}
 STEPS=${2:-48000000}
 
-SAVE_DIR="TFG_Doc/notebooks/4_memoria/resultats/ppo_ablacio_pool_48M"
+PESOS_COS="$(realpath "$PESOS_COS")"
+SAVE_DIR="$(pwd)/TFG_Doc/notebooks/4_memoria/resultats/ppo_ablacio_pool_48M"
+
+export PYTHONPATH="$(pwd):$PYTHONPATH"
 
 echo "=== F4-ablació 48M (baseline per F5) ==="
 echo "Pesos COS : $PESOS_COS"
