@@ -12,7 +12,7 @@ echo "Steps     : $STEPS"
 echo "Save dir  : $SAVE_DIR"
 echo ""
 
-python RL/entrenament/entrenamentsComparatius/fase4/entrenament_f4_ablacio_48M.py \
+python3 RL/entrenament/entrenamentsComparatius/fase4/entrenament_f4_ablacio_48M.py \
     --pesos_cos   "$PESOS_COS" \
     --steps       "$STEPS"     \
     --save_dir    "$SAVE_DIR"  \
