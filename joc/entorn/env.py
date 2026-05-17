@@ -1,0 +1,259 @@
+import sys
+import os
+import numpy as np
+from collections import OrderedDict
+from rlcard.envs.env import Env
+
+try:
+    if '__file__' in globals():
+        root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        sys.path.insert(0, root_path)
+except Exception:
+    pass
+
+from joc.entorn.game import TrucGame
+from joc.entorn.cartes_accions import ACTION_SPACE, ACTION_LIST, ACTIONS_SIGNAL, PALS, NUMS, init_joc_cartes
+
+# Mapeig de pal i rang a índex de fila/columna en el tensor de cartes (6×4×9)
+_PAL_IDX = {p: i for i, p in enumerate(PALS)}   # {'S':0, 'C':1, 'O':2, 'B':3}
+_NUM_IDX = {n: i for i, n in enumerate(NUMS)}    # {'1':0,'3':1,'4':2,...,'12':8}
+
+OBS_CONTEXT_SIZE = 24
+
+class TrucEnv(Env):
+    """
+    Entorn del joc del Truc per a RLCard.
+    Aquesta classe connecta la lògica del joc (TrucGame) amb la interfície estàndard d'entorns de RLCard.
+    """
+    def __init__(self, config):
+        self.name = 'truc'
+        self.num_jugadors = config.get('num_jugadors', 2)
+        self.cartes_jugador = config.get('cartes_jugador', 3)
+        self.puntuacio_final = config.get('puntuacio_final', 24)
+        senyes = config.get('senyes', False)
+        verbose = config.get('verbose', False)
+        player_class = config.get('player_class', None)
+
+        if player_class:
+            self.game = TrucGame(num_jugadors=self.num_jugadors, 
+                                 cartes_jugador=self.cartes_jugador, 
+                                 senyes=senyes,
+                                 puntuacio_final=self.puntuacio_final,
+                                 player_class=player_class,
+                                 verbose=verbose)
+        else:
+             self.game = TrucGame(num_jugadors=self.num_jugadors, 
+                                 cartes_jugador=self.cartes_jugador, 
+                                 senyes=senyes,
+                                 puntuacio_final=self.puntuacio_final,
+                                 verbose=verbose)
+        
+        config.setdefault('allow_step_back', False)
+        config.setdefault('seed', None)
+        super().__init__(config)
+        
+        self.cartes = init_joc_cartes()
+        self.carta_map = {carta: i for i, carta in enumerate(self.cartes)}
+        self.signal_map = {signal: i for i, signal in enumerate(ACTIONS_SIGNAL)}
+
+        # Format multi-entrada
+        # obs_cartes: (6 canals, 4 pals, 9 rangs)
+        # obs_context: (24,) — informació contextual
+        self.OBS_CARTES_SHAPE = (6, 4, 9)
+        self.OBS_CONTEXT_SIZE = OBS_CONTEXT_SIZE
+
+        # state_size i state_shape per compatibilitat amb RLCard
+        self.state_size = (
+            self.OBS_CARTES_SHAPE[0] * self.OBS_CARTES_SHAPE[1] * self.OBS_CARTES_SHAPE[2]
+            + self.OBS_CONTEXT_SIZE
+        )
+        self.state_shape = [[self.state_size] for _ in range(self.num_jugadors)]
+        self.action_shape = [[len(ACTION_LIST)] for _ in range(self.num_jugadors)]
+
+    def _carta_a_idx(self, carta_str):
+        pal = carta_str[0]
+        rang = carta_str[1:]
+        return _PAL_IDX.get(pal), _NUM_IDX.get(rang)
+
+    def _extract_state(self, state):
+        """
+        Extreu l'estat del joc en format multi-entrada per a la xarxa neuronal
+
+        Retorna un diccionari 'obs' amb:
+          - 'obs_cartes'  : np.ndarray (6, 4, 9) float32
+          - 'obs_context' : np.ndarray (24,)     float32
+        """
+        player_id = state['id_jugador']
+        n = self.num_jugadors
+
+        # Tensor de cartes (6 canals × 4 pals × 9 rangs)
+        obs_cartes = np.zeros(self.OBS_CARTES_SHAPE, dtype=np.float32)
+
+        def _marca_carta(canal, carta_str):
+            f, c = self._carta_a_idx(carta_str)
+            if f is not None and c is not None:
+                obs_cartes[canal, f, c] = 1.0
+
+        # Canal 0: Mà actual del jugador
+        for carta in state['ma_jugador']:
+            _marca_carta(0, carta)
+
+        # Canals 1-4: Historial de cartes
+        # Canal 1 = el propi jugador, Canal 2 = Rival 1, Canal 3 = Company, Canal 4 = Rival 2
+        canal_per_jugador = {}
+        for offset, canal in enumerate([1, 2, 3, 4]):
+            pid = (player_id + offset) % n
+            canal_per_jugador[pid] = canal
+
+        for entrada in state['hist_cartes']:
+            if len(entrada) == 3:
+                pid, ronda, carta = entrada
+            else:
+                pid, carta = entrada
+            canal = canal_per_jugador.get(pid)
+            if canal is not None:
+                _marca_carta(canal, carta)
+
+        # Canal 5: Cartes assenyalades per les senyes del company
+        company_pid = (player_id + 2) % n
+        SENYA_CARTA_MAP = {
+            'senya_onze_bastos':    'B11',
+            'senya_deu_ors':        'O10',
+            'senya_as_espases':     'S1',
+            'senya_as_bastos':      'B1',
+            'senya_manilla_espases':'S7',
+            'senya_manilla_ors':    'O7',
+            'senya_tres':           None,
+            'senya_as_bord':        None,
+            'senya_cegas':          None,
+        }
+        for entry in state.get('hist_senyes', []):
+            if len(entry) == 3:
+                pid, ronda, senya = entry
+            else:
+                pid, senya = entry
+            
+            if pid == company_pid:
+                carta_senya = SENYA_CARTA_MAP.get(senya)
+                if carta_senya:
+                    _marca_carta(5, carta_senya)
+
+        # Vector de context
+        obs_context = np.zeros(self.OBS_CONTEXT_SIZE, dtype=np.float32)
+
+        equip_propi = player_id % 2
+        equip_rival = 1 - equip_propi
+
+        obs_context[0] = state['puntuacio'][equip_propi] / 24.0
+        obs_context[1] = state['puntuacio'][equip_rival] / 24.0
+        obs_context[2] = state['estat_truc']['level'] / 24.0
+        obs_context[3] = state['estat_envit']['level'] / 24.0
+        obs_context[4] = state['fase_torn']                             # max=1 (2 fases: 0 i 1)
+        obs_context[5] = state['comptador_ronda'] / self.cartes_jugador  # max=cartes_jugador
+
+        # [6-9] One-hot relatiu: qui és "mà"
+        ma_offset = (state['ma'] - player_id) % n
+        if ma_offset < 4:
+            obs_context[6 + ma_offset] = 1.0
+
+        # [10-13] One-hot relatiu: qui ha cantat el Truc
+        truc_owner = state['estat_truc']['owner']
+        if truc_owner != -1:
+            truc_offset = (truc_owner - player_id) % n
+            if truc_offset < 4:
+                obs_context[10 + truc_offset] = 1.0
+
+        # [14-16] One-hot relatiu: qui ha cantat l'Envit
+        envit_owner = state['estat_envit']['owner']
+        if envit_owner != -1:
+            envit_offset = (envit_owner - player_id) % n
+            if envit_offset < 3:
+                obs_context[14 + envit_offset] = 1.0
+
+        # [17-18] Rondes guanyades (relatiu al jugador actual)
+        rondes_jo = sum(1 for w in state['ronda_winners'] if w is not None and w % 2 == equip_propi)
+        rondes_rival = sum(1 for w in state['ronda_winners'] if w is not None and w % 2 == equip_rival)
+        obs_context[17] = rondes_jo / 3.0
+        obs_context[18] = rondes_rival / 3.0
+
+        # [19-20] Guanyador R1 i R2 (relatiu: jo=+1, rival=-1, empat=0, no jugada=0)
+        def _winner_rel(ronda_idx):
+            rw = state['ronda_winners']
+            if ronda_idx >= len(rw): return 0.0
+            w = rw[ronda_idx]
+            if w == -1: return 0.0 # empat
+            return 1.0 if w % 2 == equip_propi else -1.0
+
+        obs_context[19] = _winner_rel(0)
+        obs_context[20] = _winner_rel(1)
+
+        # [21] envit_accepted
+        obs_context[21] = 1.0 if state['envit_accepted'] else 0.0
+
+        # [22] is_truc_pending, [23] is_envit_pending — flags binaris (semàntica clara)
+        rs_val = state['response_state_val']
+        obs_context[22] = 1.0 if rs_val == 1 else 0.0  # TRUC_PENDING
+        obs_context[23] = 1.0 if rs_val == 2 else 0.0  # ENVIT_PENDING
+
+        # Accions legals
+        legal_actions_list = state['accions_legals']
+        legal_actions = OrderedDict({a: None for a in legal_actions_list})
+
+        # Estat final per a l'agent
+        extracted_state = {
+            'obs': {'obs_cartes': obs_cartes, 'obs_context': obs_context},
+            'legal_actions': legal_actions,
+            'raw_obs': state,
+            'raw_legal_actions': [ACTION_LIST[a] for a in legal_actions_list],
+            'action_record': self.action_recorder
+        }
+        return extracted_state
+
+    def get_payoffs(self):
+        return self.game.get_payoffs()
+
+    def get_estat_taula(self, player_id):
+        """
+        Retorna l'estat brut del joc per mostrar la taula
+        """
+        return self.game.get_state(player_id)
+
+    def _decode_action(self, action_id):
+        return ACTION_LIST[action_id]
+
+    def _get_legal_actions(self):
+        return self.game.get_legal_actions()
+
+
+def reorganize_amb_rewards(trajectories, payoffs, reward_key='reward_intermedis'):
+    """
+    RLCard per disseny posa reward=0 a totes les transicions intermèdies i el payoff final a l'última.
+    Aquesta versió injecta els rewards intermedis llegits del raw_obs.
+    """
+    num_players = len(trajectories)
+    # traj[i] = state, traj[i+1] = action, traj[i+2] = next_state
+    hist_trajectoria = [[] for _ in range(num_players)]
+    
+    for player in range(num_players):
+        traj = trajectories[player]
+        for i in range(0, len(traj) - 2, 2):
+            is_last = (i == len(traj) - 3)
+            
+            if is_last:
+                r = payoffs[player]
+                done = True
+            else:
+                next_state = traj[i + 2]
+                raw = next_state.get('raw_obs', {})
+                ri = raw.get(reward_key, [0.0, 0.0])
+                
+                equip = player % 2
+                r = ri[equip] if isinstance(ri, list) else 0.0
+                done = False
+                
+            transition = traj[i:i+3].copy()
+            transition.insert(2, r)
+            transition.append(done)
+            hist_trajectoria[player].append(transition)
+            
+    return hist_trajectoria

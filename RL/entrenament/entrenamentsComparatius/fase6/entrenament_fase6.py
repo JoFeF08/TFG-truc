@@ -1,0 +1,436 @@
+import sys
+import os
+import argparse
+import random
+import time
+from pathlib import Path
+from datetime import datetime
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.optim import Adam
+from tqdm import tqdm
+
+try:
+    root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+    sys.path.insert(0, root_path)
+except Exception:
+    pass
+
+from rlcard.utils import set_seed
+from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import SubprocVecEnv as SB3SubprocVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
+
+from RL.models.sb3.sb3_features_extractor import CosMultiInputSB3
+from RL.models.sb3.sb3_adapter import SB3PPOEvalAgent
+from RL.models.model_propi.agent_regles import AgentRegles
+
+from RL.entrenament.entrenamentsComparatius.fase2.entrenament_fase2_curriculum import (
+    SEED, N_ACTIONS, HIDDEN_LAYERS, ENV_CONFIG_MA, ENV_CONFIG,
+    EVAL_EVERY_STEPS, NUM_ENVS_PPO,
+    PPO_LR, PPO_GAMMA, PPO_GAE, PPO_CLIP, PPO_ENT, PPO_VF,
+    PPO_EPOCHS, PPO_MINIBATCH, PPO_N_STEPS,
+    SB3EvalAgent, evaluar_agent, EVAL_GAMES_RANDOM, EVAL_GAMES_REGLES,
+)
+from RL.entrenament.entrenamentsComparatius.fase4.entrenament_fase4 import _aplicar_frozen
+from RL.entrenament.entrenamentsComparatius.fase5.entrenament_fase5 import (
+    _carregar_model_inicial, evaluar_per_variant, evaluar_selfplay, _jugar_partida_sencera
+)
+
+from RL.models.nfsp.average_policy import AveragePolicyNet, SLAgent
+from RL.models.nfsp.reservoir_buffer import ReservoirBuffer
+from RL.entrenament.entrenamentsComparatius.fase6.pool_nfsp import NFSPPool
+from joc.entorn_ma.gym_env_sessio import TrucGymEnvSessio
+
+
+# Reutilitzats de F5
+SNAPSHOT_EVERY     = 1_000_000
+MAX_SNAPSHOTS      = 9
+LAMBDA_STD         = 0.5
+N_RECENT_EVAL      = 3
+EVAL_EVERY         = max(EVAL_EVERY_STEPS, NUM_ENVS_PPO * 10)
+N_SESSIONS_EVAL    = 20
+N_PARTIDES_SESSIO_DEFAULT = 5
+
+# Nous F6
+RESERVOIR_CAP      = 200_000     
+SL_TRAIN_EVERY     = 50_000      
+SL_N_MINIBATCHES   = 256
+SL_BATCH_SIZE      = 256
+SL_LR              = 5e-4
+ETA_DEFAULT        = 0.5
+N_SESSIONS_SL_EVAL = 15          
+
+F5_MODEL_DEFAULT = str(
+    Path(__file__).parents[4]
+    / "TFG_Doc/notebooks/5_selfplay/resultats/ppo_selfplay_pool_9snaps/best_robust.zip"
+)
+
+def _make_sessio_env_fn(nfsp_pool: NFSPPool, n_partides: int, learner_pid: int, seed: int):
+    def _init():
+        cfg = ENV_CONFIG_MA.copy()
+        cfg['seed'] = seed
+        return TrucGymEnvSessio(
+            cfg,
+            opponent_pool_fn=nfsp_pool.sample,
+            n_partides=n_partides,
+            learner_pid=learner_pid,
+            seed=seed,
+        )
+    return _init
+
+def entrenar_sl_un_cicle(net, optim, buf, device, n_batches=256, batch_size=256) -> float:
+    net.train()
+    loss_fn = nn.CrossEntropyLoss()
+    losses = []
+    for _ in range(n_batches):
+        obs, act = buf.sample(batch_size)
+        obs, act = obs.to(device), act.to(device)
+        loss = loss_fn(net(obs), act)
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        losses.append(loss.item())
+    net.eval()
+    return float(np.mean(losses))
+
+def evaluar_vs_sl(eval_agent, sl_agent, n_sessions=15, seed=24680) -> float:
+    """WR del PPO actual contra SLAgent (estocàstic). Nash ideal: 50%."""
+    rng = random.Random(seed)
+    wins = sum(int(_jugar_partida_sencera(eval_agent, sl_agent, rng)) for _ in range(n_sessions))
+    return 100.0 * wins / n_sessions
+
+def init_log_f6(path: Path) -> None:
+    header = (
+        "step,"
+        "wr_random,wr_regles,metric,"
+        "wr_conservador,wr_agressiu,wr_truc_bot,wr_envit_bot,wr_faroler,wr_equilibrat,"
+        "wr_pool_mean,std_pool,metric_robust,"
+        "wr_vs_self,exploit_selfplay,"
+        "sl_loss,wr_vs_sl,exploit_vs_sl,eta_actual,"
+        "n_snapshots,elapsed\n"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(header)
+
+def append_log_f6(path: Path, step: int,
+                  wr_random: float, wr_regles: float, metric: float,
+                  wr_variants: dict[str, float],
+                  metric_robust: float, std_pool: float,
+                  wr_vs_self: float, exploit_selfplay: float,
+                  sl_loss: float, wr_vs_sl: float, exploit_vs_sl: float, eta_actual: float,
+                  n_snapshots: int, elapsed: float) -> None:
+    wr_pool_mean = sum(wr_variants.values()) / len(wr_variants)
+    
+    def _f(v): return f"{v:.4f}" if not (isinstance(v, float) and np.isnan(v)) else "nan"
+    
+    cols = [
+        str(step),
+        _f(wr_random), _f(wr_regles), _f(metric),
+        _f(wr_variants.get('conservador', 0)),
+        _f(wr_variants.get('agressiu', 0)),
+        _f(wr_variants.get('truc_bot', 0)),
+        _f(wr_variants.get('envit_bot', 0)),
+        _f(wr_variants.get('faroler', 0)),
+        _f(wr_variants.get('equilibrat', 0)),
+        _f(wr_pool_mean),
+        _f(std_pool),
+        _f(metric_robust),
+        _f(wr_vs_self),
+        _f(exploit_selfplay),
+        _f(sl_loss),
+        _f(wr_vs_sl),
+        _f(exploit_vs_sl),
+        _f(eta_actual),
+        str(n_snapshots),
+        f"{elapsed:.2f}",
+    ]
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(",".join(cols) + "\n")
+
+def _ppo_nfsp(save_dir: Path, timesteps: int, device,
+              pesos_cos: str, model_inicial: str,
+              num_envs: int, n_partides: int, eta_target: float,
+              eta_rampup: int, reservoir_cap: int, sl_lr: float, sl_every: int) -> PPO:
+
+    log_path       = save_dir / "training_log.csv"
+    snapshot_dir   = save_dir / "snapshots"
+    sl_ckpt_dir    = save_dir / "sl_checkpoints"
+    sl_ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    init_log_f6(log_path)
+
+    # INIT SL components
+    reservoir = ReservoirBuffer(capacity=reservoir_cap, seed=SEED)
+
+    # Model CPU per al pool (compartit via COW als subprocessos fork)
+    sl_net_cpu = AveragePolicyNet(pesos_cos)
+    sl_agent = SLAgent(sl_net_cpu, 'cpu', deterministic=False, seed=SEED)
+
+    nfsp_pool = NFSPPool(snapshot_dir, sl_agent, eta=0.0 if eta_rampup > 0 else eta_target, max_snapshots=MAX_SNAPSHOTS)
+
+    n_steps    = min(PPO_N_STEPS * NUM_ENVS_PPO // num_envs, 2048)
+    batch_size = min(PPO_MINIBATCH, num_envs * n_steps)
+
+    env_fns = [
+        _make_sessio_env_fn(nfsp_pool, n_partides, i % 2, SEED + i)
+        for i in range(num_envs)
+    ]
+    # Evita deadlocks de thread pool heretats pel fork
+    torch.set_num_threads(1)
+    # start_method='fork': subprocessos hereten sl_net_cpu via COW sense re-importar
+    vec_env = SB3SubprocVecEnv(env_fns, start_method='fork')
+
+    # Model CUDA per entrenament (DESPRÉS del fork per evitar corrupció de context CUDA)
+    sl_net = AveragePolicyNet(pesos_cos).to(device)
+    sl_opt = Adam(sl_net.head.parameters(), lr=sl_lr)
+
+    # Model per a avaluació
+    sl_agent_eval = SLAgent(sl_net, device, deterministic=False, seed=SEED+1)
+
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+        print(f"[GPU] {torch.cuda.get_device_name(0)} (SL training)")
+
+    policy_kwargs = dict(
+        features_extractor_class=CosMultiInputSB3,
+        features_extractor_kwargs=dict(features_dim=256),
+        net_arch=dict(pi=HIDDEN_LAYERS, vf=HIDDEN_LAYERS),
+        activation_fn=nn.ReLU,
+    )
+
+    if Path(model_inicial).exists():
+        model = _carregar_model_inicial(model_inicial, vec_env, policy_kwargs, torch.device("cpu"))
+        _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
+    else:
+        print(f"[F6] Model inicial no trobat ({model_inicial}), partint de zero.")
+        model = PPO(
+            "MlpPolicy", vec_env,
+            learning_rate=PPO_LR, n_steps=n_steps, batch_size=batch_size,
+            n_epochs=PPO_EPOCHS, gamma=PPO_GAMMA, gae_lambda=PPO_GAE,
+            clip_range=PPO_CLIP, ent_coef=PPO_ENT, vf_coef=PPO_VF,
+            policy_kwargs=policy_kwargs, verbose=0, device=torch.device("cpu"),
+        )
+        _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
+
+    regles_eval     = AgentRegles(num_actions=N_ACTIONS, seed=789)
+    best_metric_val = [-1.0]
+    best_robust     = [-1.0]
+    best_exploit_sl = [100.0]
+    
+    best_zip        = save_dir / "best"         
+    best_robust_zip = save_dir / "best_robust"  
+    best_nash_zip   = save_dir / "best_nash"    
+    
+    t0              = time.time()
+    steps_fets      = [0]
+    label           = "F6-NFSP"
+
+    class _Cb(BaseCallback):
+        def __init__(self):
+            super().__init__(verbose=0)
+            self._last_eval = 0
+            self._last_snap = 0
+            self._last_sl_train = 0
+            self._last_sl_loss = float('nan')
+            self._last_progress = 0
+            self._pbar = None
+
+        def _on_training_start(self) -> None:
+            self._pbar = tqdm(total=timesteps, unit="step", dynamic_ncols=True)
+
+        def _on_training_end(self) -> None:
+            if self._pbar:
+                self._pbar.close()
+
+        def _on_step(self) -> bool:
+            t = self.num_timesteps
+            if self._pbar is not None:
+                self._pbar.n = t
+                sl_str = f"{self._last_sl_loss:.4f}" if not np.isnan(self._last_sl_loss) else "nan"
+                self._pbar.set_postfix({"res": len(reservoir), "sl": sl_str, "eta": f"{nfsp_pool.eta:.2f}"}, refresh=True)
+
+            if t - self._last_progress >= 100_000:
+                self._last_progress = t
+                sl_str = f"{self._last_sl_loss:.4f}" if not np.isnan(self._last_sl_loss) else "nan"
+                print(f"[F6 {t:>9,}] reservoir={len(reservoir):,}  eta={nfsp_pool.eta:.2f}  sl_loss={sl_str}", flush=True)
+
+            obs_batch = self.locals.get('new_obs')
+            if obs_batch is None:
+                obs_tensor = self.locals.get('obs_tensor')
+                if obs_tensor is not None:
+                    obs_batch = obs_tensor.cpu().numpy()
+            action_batch = self.locals['actions']
+            
+            if isinstance(obs_batch, dict):
+                from RL.tools.obs_utils import flatten_obs_batch
+                try:
+                    obs_flat = flatten_obs_batch(obs_batch)
+                    reservoir.add_batch(obs_flat, action_batch)
+                except ImportError:
+                    # Alternativa simple:
+                    from RL.tools.obs_utils import flatten_obs
+                    for i in range(len(action_batch)):
+                        o = {k: v[i] for k, v in obs_batch.items()}
+                        reservoir.add(flatten_obs(o), action_batch[i])
+            else:
+                reservoir.add_batch(obs_batch, action_batch)
+
+            if eta_rampup > 0:
+                nfsp_pool.set_eta(min(eta_target, eta_target * t / eta_rampup))
+            
+            # Força eta=0 si el buffer és molt petit per evitar aprendre escombraries
+            if len(reservoir) < SL_BATCH_SIZE * 10:
+                eta_efectiva = 0.0
+            else:
+                eta_efectiva = nfsp_pool.eta
+
+            if t - self._last_snap >= SNAPSHOT_EVERY:
+                self._last_snap = t
+                nfsp_pool.add_snapshot(self.model, t)
+                
+            # SL
+            if t - self._last_sl_train >= sl_every and len(reservoir) >= SL_BATCH_SIZE:
+                self._last_sl_loss = entrenar_sl_un_cicle(sl_net, sl_opt, reservoir, device,
+                                                          n_batches=SL_N_MINIBATCHES, batch_size=SL_BATCH_SIZE)
+                self._last_sl_train = t
+                # Sincronitza pesos cap al model CPU del pool
+                sl_net_cpu.load_state_dict(
+                    {k: v.detach().cpu() for k, v in sl_net.state_dict().items()}
+                )
+                if (t // 1_000_000) > (self._last_sl_train // 1_000_000) or t % 1_000_000 < sl_every:
+                    torch.save(sl_net.state_dict(), sl_ckpt_dir / f"sl_{t//1_000_000}M.pt")
+
+            # Avaluació
+            if t - self._last_eval >= EVAL_EVERY:
+                self._last_eval = t
+                steps_fets[0] = t
+                agent = SB3EvalAgent(self.model)
+
+                wr_random, wr_regles, metric = evaluar_agent(
+                    agent, ENV_CONFIG, regles_eval,
+                    n_random=EVAL_GAMES_RANDOM, n_regles=EVAL_GAMES_REGLES,
+                )
+
+                wr_variants = evaluar_per_variant(agent)
+                vals = list(wr_variants.values())
+                wr_pool_mean = sum(vals) / len(vals)
+                std_pool     = float(np.std(vals))
+                metric_robust = wr_pool_mean - LAMBDA_STD * std_pool
+
+                recents      = nfsp_pool.get_recent(N_RECENT_EVAL)
+                wr_vs_self   = evaluar_selfplay(agent, recents)
+                exploit_sp   = abs(wr_vs_self - 50.0) if not np.isnan(wr_vs_self) else float('nan')
+                
+                # Eval SL
+                wr_vs_sl     = evaluar_vs_sl(agent, sl_agent_eval, N_SESSIONS_SL_EVAL)
+                exploit_vs_sl = abs(wr_vs_sl - 50.0)
+
+                elapsed = time.time() - t0
+                append_log_f6(log_path, t,
+                              wr_random, wr_regles, metric,
+                              wr_variants, metric_robust, std_pool,
+                              wr_vs_self, exploit_sp,
+                              self._last_sl_loss, wr_vs_sl, exploit_vs_sl, eta_efectiva,
+                              nfsp_pool.n_snapshots, elapsed)
+
+                nou_millor = []
+                if metric > best_metric_val[0]:
+                    best_metric_val[0] = metric
+                    self.model.save(str(best_zip))
+                    nou_millor.append("M")
+                if metric_robust > best_robust[0]:
+                    best_robust[0] = metric_robust
+                    self.model.save(str(best_robust_zip))
+                    nou_millor.append("MR")
+                if exploit_vs_sl < best_exploit_sl[0]:
+                    best_exploit_sl[0] = exploit_vs_sl
+                    self.model.save(str(best_nash_zip))
+                    nou_millor.append("N")
+                    
+                flags = " | ".join(nou_millor) if nou_millor else ""
+
+                exploit_str = f"{exploit_sp:.2f}" if not np.isnan(exploit_sp) else "nan"
+                print(
+                    f"[{label} {t:>9,}] "
+                    f"m={metric:.1f}% mr={metric_robust:.1f}% "
+                    f"std={std_pool:.1f} exp_sp={exploit_str} exp_sl={exploit_vs_sl:.1f} "
+                    f"eta={eta_efectiva:.2f} {flags}"
+                )
+            return True
+
+    model.learn(total_timesteps=timesteps, callback=_Cb())
+    vec_env.close()
+    model.save(str(save_dir / "final"))
+    torch.save(sl_net.state_dict(), str(save_dir / "sl_final.pt"))
+    
+    if not Path(str(best_zip) + ".zip").exists():
+        model.save(str(best_zip))
+    if not Path(str(best_robust_zip) + ".zip").exists():
+        model.save(str(best_robust_zip))
+    if not Path(str(best_nash_zip) + ".zip").exists():
+        model.save(str(best_nash_zip))
+        
+    print(f"[{label}] Complet. Millor metric: {best_metric_val[0]:.2f}%  "
+          f"Millor metric_robust: {best_robust[0]:.2f}%  "
+          f"Millor Nash exploit: {best_exploit_sl[0]:.2f}%")
+    return model
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Fase 6: NFSP Complet")
+    parser.add_argument("--pesos_cos",     type=str, required=True,
+                        help="Ruta al best_pesos_cos_truc.pth")
+    parser.add_argument("--model_inicial", type=str, default=F5_MODEL_DEFAULT,
+                        help="Ruta al best_robust.zip de F5 (punt de partida)")
+    parser.add_argument("--steps",         type=int, default=12_000_000)
+    parser.add_argument("--num_envs",      type=int, default=NUM_ENVS_PPO)
+    parser.add_argument("--n_partides",    type=int, default=N_PARTIDES_SESSIO_DEFAULT)
+    parser.add_argument("--save_dir",      type=str, default=None)
+    parser.add_argument("--eta",           type=float, default=ETA_DEFAULT)
+    parser.add_argument("--eta_rampup",    type=int, default=0)
+    parser.add_argument("--reservoir_cap", type=int, default=RESERVOIR_CAP)
+    parser.add_argument("--sl_lr",         type=float, default=SL_LR)
+    parser.add_argument("--sl_every",      type=int, default=SL_TRAIN_EVERY)
+    args = parser.parse_args()
+
+    set_seed(SEED)
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+        print("[CPU] GPU no disponible, SL en CPU.")
+
+    if args.save_dir:
+        save_dir = Path(args.save_dir)
+    else:
+        ts = datetime.now().strftime("%d%m_%H%Mh")
+        save_dir = Path(__file__).parent / "registres" / f"ppo_nfsp_{ts}"
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[F6] steps={args.steps:,}  num_envs={args.num_envs}  "
+          f"eta={args.eta} rampup={args.eta_rampup}  save_dir={save_dir}")
+
+    t_start = time.time()
+    _ppo_nfsp(
+        save_dir, args.steps, device,
+        pesos_cos=args.pesos_cos,
+        model_inicial=args.model_inicial,
+        num_envs=args.num_envs,
+        n_partides=args.n_partides,
+        eta_target=args.eta,
+        eta_rampup=args.eta_rampup,
+        reservoir_cap=args.reservoir_cap,
+        sl_lr=args.sl_lr,
+        sl_every=args.sl_every,
+    )
+    total = time.time() - t_start
+    print(f"\nTemps total: {total:.0f}s ({total/3600:.2f}h)")
+
+
+if __name__ == "__main__":
+    main()
