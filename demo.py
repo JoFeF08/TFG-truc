@@ -38,11 +38,18 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-MODEL_PATH = resource_path("TFG_Doc/notebooks/4_memoria/resultats/ppo_ablacio_pool/best.zip")
-TIPUS_AGENT = "sb3"          # per Fase 4 LSTM: "sb3" amb algorisme="ppo_lstm"
-ALGORISME    = "ppo"         # "ppo" | "dqn" | "ppo_lstm"
+# Pesos de producció: el best_nash de F6 (menys explotable, juga bé l'envit).
+MODEL_PATH = resource_path("TFG_Doc/notebooks/6_nfsp/resultats/ppo_nfsp/best_nash.zip")
+TIPUS_AGENT = "sb3"          # "sb3" | "nfsp_sl" | "regles"
+ALGORISME    = "ppo"         # només per "sb3": "ppo" | "dqn" | "ppo_lstm"
 
 PARTIDES_SESSIO = 1
+
+# Spec del jugador IA segons el tipus
+if TIPUS_AGENT == "sb3":
+    _spec_ia = {"tipus": "sb3", "algorisme": ALGORISME, "ruta": MODEL_PATH}
+else:
+    _spec_ia = {"tipus": TIPUS_AGENT, "ruta": MODEL_PATH}
 
 config = {
     "num_jugadors": 2,
@@ -51,11 +58,7 @@ config = {
     "puntuacio_final": 24,
     "tipus_jugadors": {
         0: {"tipus": "huma"},
-        1: {
-            "tipus": TIPUS_AGENT,
-            "algorisme": ALGORISME,
-            "ruta": MODEL_PATH
-        },
+        1: _spec_ia,
     },
 }
 
