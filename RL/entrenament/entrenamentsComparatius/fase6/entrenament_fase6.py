@@ -61,7 +61,8 @@ SL_N_MINIBATCHES   = 256
 SL_BATCH_SIZE      = 256
 SL_LR              = 5e-4
 ETA_DEFAULT        = 0.5
-N_SESSIONS_SL_EVAL = 15          
+N_SESSIONS_SL_EVAL = 60          # 30 partides per posició (resolució ~1,7 pp)
+NASH_MIN_STEPS     = 10_000_000  # llindar mínim per arxivar best_nash (evita soroll inicial)
 
 F5_MODEL_DEFAULT = str(
     Path(__file__).parents[4]
@@ -96,10 +97,19 @@ def entrenar_sl_un_cicle(net, optim, buf, device, n_batches=256, batch_size=256)
     net.eval()
     return float(np.mean(losses))
 
-def evaluar_vs_sl(eval_agent, sl_agent, n_sessions=15, seed=24680) -> float:
-    """WR del PPO actual contra SLAgent (estocàstic). Nash ideal: 50%."""
+def evaluar_vs_sl(eval_agent, sl_agent, n_sessions=N_SESSIONS_SL_EVAL, seed=24680) -> float:
+    """WR del PPO actual contra SLAgent (estocàstic). Nash ideal: 50%.
+
+    Alterna la posició de l'eval_agent (meitat mà, meitat post) per eliminar el biaix
+    posicional. El Truc no admet empats en partida sencera, així que perdre com a post
+    equival a (not eval_agent guanya com a primer agent)."""
     rng = random.Random(seed)
-    wins = sum(int(_jugar_partida_sencera(eval_agent, sl_agent, rng)) for _ in range(n_sessions))
+    wins = 0
+    for i in range(n_sessions):
+        if i % 2 == 0:
+            wins += int(_jugar_partida_sencera(eval_agent, sl_agent, rng))
+        else:
+            wins += int(not _jugar_partida_sencera(sl_agent, eval_agent, rng))
     return 100.0 * wins / n_sessions
 
 def init_log_f6(path: Path) -> None:
@@ -154,7 +164,9 @@ def append_log_f6(path: Path, step: int,
 def _ppo_nfsp(save_dir: Path, timesteps: int, device,
               pesos_cos: str, model_inicial: str,
               num_envs: int, n_partides: int, eta_target: float,
-              eta_rampup: int, reservoir_cap: int, sl_lr: float, sl_every: int) -> PPO:
+              eta_rampup: int, reservoir_cap: int, sl_lr: float, sl_every: int,
+              nash_min_steps: int = NASH_MIN_STEPS,
+              sl_eval_sessions: int = N_SESSIONS_SL_EVAL) -> PPO:
 
     log_path       = save_dir / "training_log.csv"
     snapshot_dir   = save_dir / "snapshots"
@@ -326,7 +338,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                 exploit_sp   = abs(wr_vs_self - 50.0) if not np.isnan(wr_vs_self) else float('nan')
                 
                 # Eval SL
-                wr_vs_sl     = evaluar_vs_sl(agent, sl_agent_eval, N_SESSIONS_SL_EVAL)
+                wr_vs_sl     = evaluar_vs_sl(agent, sl_agent_eval, sl_eval_sessions)
                 exploit_vs_sl = abs(wr_vs_sl - 50.0)
 
                 elapsed = time.time() - t0
@@ -346,7 +358,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     best_robust[0] = metric_robust
                     self.model.save(str(best_robust_zip))
                     nou_millor.append("MR")
-                if exploit_vs_sl < best_exploit_sl[0]:
+                if exploit_vs_sl < best_exploit_sl[0] and t >= nash_min_steps:
                     best_exploit_sl[0] = exploit_vs_sl
                     self.model.save(str(best_nash_zip))
                     nou_millor.append("N")
@@ -395,6 +407,10 @@ def main():
     parser.add_argument("--reservoir_cap", type=int, default=RESERVOIR_CAP)
     parser.add_argument("--sl_lr",         type=float, default=SL_LR)
     parser.add_argument("--sl_every",      type=int, default=SL_TRAIN_EVERY)
+    parser.add_argument("--nash_min_steps", type=int, default=NASH_MIN_STEPS,
+                        help="No arxivar best_nash abans d'aquest pas (evita soroll inicial)")
+    parser.add_argument("--sl_eval_sessions", type=int, default=N_SESSIONS_SL_EVAL,
+                        help="Partides per avaluar exploit_vs_sl (alterna posició)")
     args = parser.parse_args()
 
     set_seed(SEED)
@@ -427,6 +443,8 @@ def main():
         reservoir_cap=args.reservoir_cap,
         sl_lr=args.sl_lr,
         sl_every=args.sl_every,
+        nash_min_steps=args.nash_min_steps,
+        sl_eval_sessions=args.sl_eval_sessions,
     )
     total = time.time() - t_start
     print(f"\nTemps total: {total:.0f}s ({total/3600:.2f}h)")
