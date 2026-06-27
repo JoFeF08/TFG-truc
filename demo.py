@@ -38,8 +38,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-# Pesos de producció: el best_nash de F6 (menys explotable, juga bé l'envit).
-MODEL_PATH = resource_path("TFG_Doc/notebooks/6_nfsp/resultats/ppo_nfsp/best_nash.zip")
+# Pesos de producció: best.zip del re-run corregit de F6 (model desplegat, Checkpoint 3).
+MODEL_PATH = resource_path("TFG_Doc/notebooks/7_checkpoint3/ppo_nfsp_rerun/best.zip")
 TIPUS_AGENT = "sb3"          # "sb3" | "nfsp_sl" | "regles"
 ALGORISME    = "ppo"         # només per "sb3": "ppo" | "dqn" | "ppo_lstm"
 
