@@ -43,6 +43,7 @@ from RL.models.nfsp.average_policy import AveragePolicyNet, SLAgent
 from RL.models.nfsp.reservoir_buffer import ReservoirBuffer
 from RL.entrenament.entrenamentsComparatius.fase6.pool_nfsp import NFSPPool
 from joc.entorn_ma.gym_env_sessio import TrucGymEnvSessio
+from RL.tools.calibracio import mesurar_calibracio, CALIB_ENVIT_MIN
 
 
 # Reutilitzats de F5
@@ -63,6 +64,9 @@ SL_LR              = 5e-4
 ETA_DEFAULT        = 0.5
 N_SESSIONS_SL_EVAL = 60          # 30 partides per posició (resolució ~1,7 pp)
 NASH_MIN_STEPS     = 10_000_000  # llindar mínim per arxivar best_nash (evita soroll inicial)
+ENVIT_BOT_MIN      = 50.0        # floor de seguretat WR vs envit_bot (gate real = calib_envit)
+NASH_PATIENCE      = 3           # evals vàlids sense millora de best_nash -> early stop
+CALIB_EVAL_INITS   = 3000        # inicialitzacions per mesurar la calibració (1a jugada)
 
 F5_MODEL_DEFAULT = str(
     Path(__file__).parents[4]
@@ -120,7 +124,8 @@ def init_log_f6(path: Path) -> None:
         "wr_pool_mean,std_pool,metric_robust,"
         "wr_vs_self,exploit_selfplay,"
         "sl_loss,wr_vs_sl,exploit_vs_sl,eta_actual,"
-        "n_snapshots,elapsed\n"
+        "n_snapshots,elapsed,"
+        "calib_envit,calib_truc,nash_valid,evals_sense_millora\n"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -132,7 +137,9 @@ def append_log_f6(path: Path, step: int,
                   metric_robust: float, std_pool: float,
                   wr_vs_self: float, exploit_selfplay: float,
                   sl_loss: float, wr_vs_sl: float, exploit_vs_sl: float, eta_actual: float,
-                  n_snapshots: int, elapsed: float) -> None:
+                  n_snapshots: int, elapsed: float,
+                  calib_envit: float = float('nan'), calib_truc: float = float('nan'),
+                  nash_valid: bool = False, evals_sense_millora: int = 0) -> None:
     wr_pool_mean = sum(wr_variants.values()) / len(wr_variants)
     
     def _f(v): return f"{v:.4f}" if not (isinstance(v, float) and np.isnan(v)) else "nan"
@@ -157,6 +164,10 @@ def append_log_f6(path: Path, step: int,
         _f(eta_actual),
         str(n_snapshots),
         f"{elapsed:.2f}",
+        _f(calib_envit),
+        _f(calib_truc),
+        str(int(nash_valid)),
+        str(int(evals_sense_millora)),
     ]
     with open(path, "a", encoding="utf-8") as f:
         f.write(",".join(cols) + "\n")
@@ -166,7 +177,9 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
               num_envs: int, n_partides: int, eta_target: float,
               eta_rampup: int, reservoir_cap: int, sl_lr: float, sl_every: int,
               nash_min_steps: int = NASH_MIN_STEPS,
-              sl_eval_sessions: int = N_SESSIONS_SL_EVAL) -> PPO:
+              sl_eval_sessions: int = N_SESSIONS_SL_EVAL,
+              nash_patience: int = NASH_PATIENCE,
+              ent_coef_override: float | None = None) -> PPO:
 
     log_path       = save_dir / "training_log.csv"
     snapshot_dir   = save_dir / "snapshots"
@@ -228,6 +241,10 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         )
         _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
 
+    if ent_coef_override is not None:
+        model.ent_coef = ent_coef_override
+        print(f"[F6] ent_coef override = {ent_coef_override}")
+
     regles_eval     = AgentRegles(num_actions=N_ACTIONS, seed=789)
     best_metric_val = [-1.0]
     best_robust     = [-1.0]
@@ -250,6 +267,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
             self._last_sl_loss = float('nan')
             self._last_progress = 0
             self._pbar = None
+            self._evals_sense_millora = 0
 
         def _on_training_start(self) -> None:
             self._pbar = tqdm(total=timesteps, unit="step", dynamic_ncols=True)
@@ -341,13 +359,17 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                 wr_vs_sl     = evaluar_vs_sl(agent, sl_agent_eval, sl_eval_sessions)
                 exploit_vs_sl = abs(wr_vs_sl - 50.0)
 
-                elapsed = time.time() - t0
-                append_log_f6(log_path, t,
-                              wr_random, wr_regles, metric,
-                              wr_variants, metric_robust, std_pool,
-                              wr_vs_self, exploit_sp,
-                              self._last_sl_loss, wr_vs_sl, exploit_vs_sl, eta_efectiva,
-                              nfsp_pool.n_snapshots, elapsed)
+                # Calibració estratègica (detecta el col·lapse d'envit)
+                calib = mesurar_calibracio(agent, ENV_CONFIG, n_inits=CALIB_EVAL_INITS)
+                calib_envit = calib["calib_envit"]
+                calib_truc  = calib["calib_truc"]
+
+                # Gates per a best_nash (madur + reservoir ple + no degenerat)
+                reservoir_ple = len(reservoir) >= reservoir.capacity
+                prou_madur    = t >= nash_min_steps
+                no_degenerat  = ((not np.isnan(calib_envit)) and calib_envit >= CALIB_ENVIT_MIN
+                                 and wr_variants.get('envit_bot', 0) >= ENVIT_BOT_MIN)
+                nash_valid    = reservoir_ple and prou_madur and no_degenerat
 
                 nou_millor = []
                 if metric > best_metric_val[0]:
@@ -358,20 +380,45 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     best_robust[0] = metric_robust
                     self.model.save(str(best_robust_zip))
                     nou_millor.append("MR")
-                if exploit_vs_sl < best_exploit_sl[0] and t >= nash_min_steps:
-                    best_exploit_sl[0] = exploit_vs_sl
-                    self.model.save(str(best_nash_zip))
-                    nou_millor.append("N")
-                    
+
+                # best_nash: només entre evals vàlids (no degenerats); early stopping
+                # per no-millora entre evals vàlids.
+                if nash_valid:
+                    if exploit_vs_sl < best_exploit_sl[0]:
+                        best_exploit_sl[0] = exploit_vs_sl
+                        self.model.save(str(best_nash_zip))
+                        nou_millor.append("N")
+                        self._evals_sense_millora = 0
+                    else:
+                        self._evals_sense_millora += 1
+
+                elapsed = time.time() - t0
+                append_log_f6(log_path, t,
+                              wr_random, wr_regles, metric,
+                              wr_variants, metric_robust, std_pool,
+                              wr_vs_self, exploit_sp,
+                              self._last_sl_loss, wr_vs_sl, exploit_vs_sl, eta_efectiva,
+                              nfsp_pool.n_snapshots, elapsed,
+                              calib_envit, calib_truc, nash_valid, self._evals_sense_millora)
+
                 flags = " | ".join(nou_millor) if nou_millor else ""
 
                 exploit_str = f"{exploit_sp:.2f}" if not np.isnan(exploit_sp) else "nan"
+                calib_str = f"{calib_envit:.0f}" if not np.isnan(calib_envit) else "nan"
                 print(
                     f"[{label} {t:>9,}] "
                     f"m={metric:.1f}% mr={metric_robust:.1f}% "
                     f"std={std_pool:.1f} exp_sp={exploit_str} exp_sl={exploit_vs_sl:.1f} "
+                    f"cal_env={calib_str}pp v={int(nash_valid)} ns={self._evals_sense_millora} "
                     f"eta={eta_efectiva:.2f} {flags}"
                 )
+
+                # Early stopping: best_nash vàlid i estable (no millora) durant nash_patience evals
+                if nash_valid and self._evals_sense_millora >= nash_patience:
+                    print(f"[{label}] EARLY STOP @ {t:,}: best_nash estable "
+                          f"({nash_patience} evals vàlids sense millora), "
+                          f"exp_sl_min={best_exploit_sl[0]:.2f} pp")
+                    return False
             return True
 
     model.learn(total_timesteps=timesteps, callback=_Cb())
@@ -411,6 +458,10 @@ def main():
                         help="No arxivar best_nash abans d'aquest pas (evita soroll inicial)")
     parser.add_argument("--sl_eval_sessions", type=int, default=N_SESSIONS_SL_EVAL,
                         help="Partides per avaluar exploit_vs_sl (alterna posició)")
+    parser.add_argument("--nash_patience", type=int, default=NASH_PATIENCE,
+                        help="Evals vàlids sense millora de best_nash abans d'aturar (early stopping)")
+    parser.add_argument("--ent_coef", type=float, default=None,
+                        help="Override del coeficient d'entropia del PPO (protegeix accions rares com apostar_envit)")
     args = parser.parse_args()
 
     set_seed(SEED)
@@ -445,6 +496,8 @@ def main():
         sl_every=args.sl_every,
         nash_min_steps=args.nash_min_steps,
         sl_eval_sessions=args.sl_eval_sessions,
+        nash_patience=args.nash_patience,
+        ent_coef_override=args.ent_coef,
     )
     total = time.time() - t_start
     print(f"\nTemps total: {total:.0f}s ({total/3600:.2f}h)")
