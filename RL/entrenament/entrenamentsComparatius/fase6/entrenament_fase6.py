@@ -249,10 +249,11 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
     best_metric_val = [-1.0]
     best_robust     = [-1.0]
     best_exploit_sl = [100.0]
-    
-    best_zip        = save_dir / "best"         
-    best_robust_zip = save_dir / "best_robust"  
-    best_nash_zip   = save_dir / "best_nash"    
+    best_calib_envit = [-1.0]
+
+    best_zip        = save_dir / "best"
+    best_robust_zip = save_dir / "best_robust"
+    best_nash_zip   = save_dir / "best_nash"
     
     t0              = time.time()
     steps_fets      = [0]
@@ -381,11 +382,15 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     self.model.save(str(best_robust_zip))
                     nou_millor.append("MR")
 
-                # best_nash: només entre evals vàlids (no degenerats); early stopping
-                # per no-millora entre evals vàlids.
+                # best_nash: només entre evals vàlids (no degenerats); early stopping dual
+                # Exigeix millora SIMULTÀNIA tant de exploit_vs_sl com de calib_envit
                 if nash_valid:
-                    if exploit_vs_sl < best_exploit_sl[0]:
+                    millora_exploit = exploit_vs_sl < best_exploit_sl[0]
+                    millora_calib = calib_envit > best_calib_envit[0]
+                    
+                    if millora_exploit and millora_calib:
                         best_exploit_sl[0] = exploit_vs_sl
+                        best_calib_envit[0] = calib_envit
                         self.model.save(str(best_nash_zip))
                         nou_millor.append("N")
                         self._evals_sense_millora = 0
@@ -413,11 +418,11 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     f"eta={eta_efectiva:.2f} {flags}"
                 )
 
-                # Early stopping: best_nash vàlid i estable (no millora) durant nash_patience evals
                 if nash_valid and self._evals_sense_millora >= nash_patience:
                     print(f"[{label}] EARLY STOP @ {t:,}: best_nash estable "
-                          f"({nash_patience} evals vàlids sense millora), "
-                          f"exp_sl_min={best_exploit_sl[0]:.2f} pp")
+                          f"({nash_patience} evals vàlids sense millora dual), "
+                          f"exp_sl_min={best_exploit_sl[0]:.2f} pp, "
+                          f"calib_envit_max={best_calib_envit[0]:.1f} pp")
                     return False
             return True
 
