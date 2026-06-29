@@ -38,6 +38,7 @@ CALIB_TRUC_MIN = 40.0    # pp; floor de seguretat (diagnòstic, no és el mode d
 ENVIT_BAIX = 14          # envit_score <= → bucket baix
 ENVIT_ALT = 28           # envit_score >= → bucket alt
 TRUC_FORTA = 218         # sum de forces de la mà >= → mà de truc forta (Q3 empíric)
+TRUC_FEBLE = 100         # sum de forces de la mà < → mà de truc fluixa (Q1 empíric)
 
 
 def _forca_ma(hand) -> int:
@@ -63,6 +64,7 @@ def mesurar_calibracio(eval_agent: Any, env_config: dict,
     n_env_baix = n_env_alt = 0
     env_baix = env_alt = 0
     truc_forta_si = truc_forta_n = 0
+    truc_feble_si = truc_feble_n = 0
 
     for i in range(n_inits):
         g = TrucGameMa(2, env_config.get("cartes_jugador", 3),
@@ -88,6 +90,9 @@ def mesurar_calibracio(eval_agent: Any, env_config: dict,
         if ft >= TRUC_FORTA:
             truc_forta_n += 1
             truc_forta_si += (accio == _AP_T)
+        elif ft < TRUC_FEBLE:
+            truc_feble_n += 1
+            truc_feble_si += (accio == _AP_T)
 
     p_env_baix = 100.0 * env_baix / n_env_baix if n_env_baix else float("nan")
     p_env_alt = 100.0 * env_alt / n_env_alt if n_env_alt else float("nan")

@@ -279,6 +279,10 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
             self._last_snap = 0
             self._last_sl_train = 0
             self._last_sl_loss = float('nan')
+            self._last_sl_calib = 0
+            self._last_sl_calib_envit = float('nan')
+            self._peak_sl_calib_envit = 0.0
+            self._sl_paused = False
             self._last_progress = 0
             self._pbar = None
             self._evals_sense_millora = 0
@@ -347,6 +351,41 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                 )
                 if (t // 1_000_000) > (self._last_sl_train // 1_000_000) or t % 1_000_000 < sl_every:
                     torch.save(sl_net.state_dict(), sl_ckpt_dir / f"sl_{t//1_000_000}M.pt")
+
+            # Monitorització de calibració dins SL (detecta col·lapses mid-training)
+            if t - self._last_sl_calib >= 1_000_000 and len(reservoir) >= SL_BATCH_SIZE * 20:
+                self._last_sl_calib = t
+                agent_sl = SLAgent(sl_net, device, deterministic=False, seed=SEED+2)
+                calib_sl = mesurar_calibracio(agent_sl, ENV_CONFIG, n_inits=1000)
+                calib_envit_sl = calib_sl["calib_envit"]
+                
+                if not np.isnan(calib_envit_sl):
+                    delta = calib_envit_sl - self._last_sl_calib_envit if not np.isnan(self._last_sl_calib_envit) else 0
+                    delta_str = f"({delta:+.1f}pp)" if delta != 0 else ""
+                    
+                    # Update peak
+                    if calib_envit_sl > self._peak_sl_calib_envit:
+                        self._peak_sl_calib_envit = calib_envit_sl
+                    
+                    # Dinàmic SL pause/resume basad en calib_envit
+                    should_pause = calib_envit_sl < (self._peak_sl_calib_envit - 20.0) and calib_envit_sl < 25.0
+                    should_resume = calib_envit_sl > (self._peak_sl_calib_envit - 10.0) and self._sl_paused
+                    
+                    if should_pause and not self._sl_paused:
+                        nfsp_pool.set_eta(0.0)
+                        self._sl_paused = True
+                        print(f"[SL-PAUSE {t:,}] calib_envit {self._peak_sl_calib_envit:.1f}pp -> {calib_envit_sl:.1f}pp | SL disabled", flush=True)
+                    elif should_resume and self._sl_paused:
+                        nfsp_pool.set_eta(eta_target)
+                        self._sl_paused = False
+                        print(f"[SL-RESUME {t:,}] calib_envit={calib_envit_sl:.1f}pp | SL re-enabled", flush=True)
+                    
+                    status = "[PAUSED]" if self._sl_paused else ""
+                    print(f"[SL {t:>9,}] calib_envit={calib_envit_sl:.1f}pp {delta_str} {status}", flush=True)
+                    
+                    if calib_envit_sl < CALIB_ENVIT_MIN:
+                        print(f"[SL-WARN {t:,}] calib_envit < {CALIB_ENVIT_MIN}pp", flush=True)
+                    self._last_sl_calib_envit = calib_envit_sl
 
             # Avaluació
             if t - self._last_eval >= EVAL_EVERY:
