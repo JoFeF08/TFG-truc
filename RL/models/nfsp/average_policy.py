@@ -8,8 +8,8 @@ from RL.tools.obs_utils import flatten_obs
 
 class AveragePolicyNet(nn.Module):
     """COS frozen (instància pròpia, mateixos pesos que PPO) + head MLP -> 24 logits.
-    Arquitectura reforçada per Fase 6: hidden=(512,512) amb dropout=0.2 per regularitzar."""
-    def __init__(self, pesos_cos: str, hidden=(512, 512), n_actions: int = 24, dropout: float = 0.2):
+    Arquitectura configurable: hidden=(256,256) per defecte (compatible F5)."""
+    def __init__(self, pesos_cos: str, hidden=(256, 256), n_actions: int = 24, dropout: float = 0.0):
         super().__init__()
         self.cos = CosMultiInputSB3(observation_space=Box(low=-1, high=1, shape=(240,)),
                                     features_dim=256)
@@ -17,7 +17,9 @@ class AveragePolicyNet(nn.Module):
         self.cos.congelar_cos()
         layers, in_dim = [], 256
         for h in hidden:
-            layers += [nn.Linear(in_dim, h), nn.ReLU(), nn.Dropout(dropout)]
+            layers += [nn.Linear(in_dim, h), nn.ReLU()]
+            if dropout > 0:
+                layers += [nn.Dropout(dropout)]
             in_dim = h
         layers += [nn.Linear(in_dim, n_actions)]
         self.head = nn.Sequential(*layers)

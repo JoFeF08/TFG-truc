@@ -179,7 +179,8 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
               nash_min_steps: int = NASH_MIN_STEPS,
               sl_eval_sessions: int = N_SESSIONS_SL_EVAL,
               nash_patience: int = NASH_PATIENCE,
-              ent_coef_override: float | None = None) -> PPO:
+              ent_coef_override: float | None = None,
+              hidden_layers: list[int] | None = None) -> PPO:
 
     log_path       = save_dir / "training_log.csv"
     snapshot_dir   = save_dir / "snapshots"
@@ -192,7 +193,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
     reservoir = ReservoirBuffer(capacity=reservoir_cap, seed=SEED)
 
     # Model CPU per al pool (compartit via COW als subprocessos fork)
-    sl_net_cpu = AveragePolicyNet(pesos_cos)
+    sl_net_cpu = AveragePolicyNet(pesos_cos, hidden=hidden_layers)
     sl_agent = SLAgent(sl_net_cpu, 'cpu', deterministic=False, seed=SEED)
 
     nfsp_pool = NFSPPool(snapshot_dir, sl_agent, eta=0.0 if eta_rampup > 0 else eta_target, max_snapshots=MAX_SNAPSHOTS)
@@ -210,7 +211,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
     vec_env = SB3SubprocVecEnv(env_fns, start_method='fork')
 
     # Model CUDA per entrenament (DESPRÉS del fork per evitar corrupció de context CUDA)
-    sl_net = AveragePolicyNet(pesos_cos).to(device)
+    sl_net = AveragePolicyNet(pesos_cos, hidden=hidden_layers).to(device)
     sl_opt = Adam(sl_net.head.parameters(), lr=sl_lr)
 
     # Model per a avaluació
@@ -220,13 +221,14 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         torch.backends.cudnn.benchmark = True
         print(f"[GPU] {torch.cuda.get_device_name(0)} (SL training)")
 
-    # Arquitectura reforçada per Fase 6: augmentar de [256,256] a [512,512]
-    HIDDEN_LAYERS_F6 = [512, 512]
+    # Arquitectura configurable
+    if hidden_layers is None:
+        hidden_layers = [256, 256]
     
     policy_kwargs = dict(
         features_extractor_class=CosMultiInputSB3,
         features_extractor_kwargs=dict(features_dim=256),
-        net_arch=dict(pi=HIDDEN_LAYERS_F6, vf=HIDDEN_LAYERS_F6),
+        net_arch=dict(pi=hidden_layers, vf=hidden_layers),
         activation_fn=nn.ReLU,
     )
 
@@ -475,6 +477,8 @@ def main():
                         help="Partides per avaluar exploit_vs_sl (alterna posició)")
     parser.add_argument("--nash_patience", type=int, default=NASH_PATIENCE,
                         help="Evals vàlids sense millora de best_nash abans d'aturar (early stopping)")
+    parser.add_argument("--hidden_layers", type=int, nargs=2, default=[256, 256],
+                        help="Arquitectura policy head: [h1 h2]. Default [256 256]")
     parser.add_argument("--ent_coef", type=float, default=None,
                         help="Override del coeficient d'entropia del PPO (protegeix accions rares com apostar_envit)")
     args = parser.parse_args()
@@ -495,7 +499,7 @@ def main():
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[F6] steps={args.steps:,}  num_envs={args.num_envs}  "
-          f"eta={args.eta} rampup={args.eta_rampup}  save_dir={save_dir}")
+          f"eta={args.eta} rampup={args.eta_rampup}  hidden={args.hidden_layers}  save_dir={save_dir}")
 
     t_start = time.time()
     _ppo_nfsp(
@@ -513,6 +517,7 @@ def main():
         sl_eval_sessions=args.sl_eval_sessions,
         nash_patience=args.nash_patience,
         ent_coef_override=args.ent_coef,
+        hidden_layers=args.hidden_layers,
     )
     total = time.time() - t_start
     print(f"\nTemps total: {total:.0f}s ({total/3600:.2f}h)")
