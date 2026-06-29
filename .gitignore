@@ -112,3 +112,4 @@ resultats_fase2_*
 .mcp.json
 *.png
 CLAUDE.md
+TFG_Doc\notebooks\6_nfsp\resultats\ppo_nfsp_v2
