@@ -522,8 +522,8 @@ def main():
                         help="Partides per avaluar exploit_vs_sl (alterna posició)")
     parser.add_argument("--nash_patience", type=int, default=NASH_PATIENCE,
                         help="Evals vàlids sense millora de best_nash abans d'aturar (early stopping)")
-    parser.add_argument("--hidden_layers", type=int, nargs=2, default=[256, 256],
-                        help="Arquitectura policy head: [h1 h2]. Default [256 256]")
+    parser.add_argument("--hidden_layers", type=int, nargs='+', default=[256, 256],
+                        help="Arquitectura policy head: [h1 h2 ...]. Default [256 256]")
     parser.add_argument("--ent_coef", type=float, default=None,
                         help="Override del coeficient d'entropia del PPO (protegeix accions rares com apostar_envit)")
     args = parser.parse_args()
