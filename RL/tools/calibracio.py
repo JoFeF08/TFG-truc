@@ -34,11 +34,11 @@ _AP_T = ACTION_SPACE["apostar_truc"]
 CALIB_ENVIT_MIN = 15.0   # pp; gate de no-degeneració
 CALIB_TRUC_MIN = 40.0    # pp; floor de seguretat (diagnòstic, no és el mode de fallada)
 
-# Buckets
-ENVIT_BAIX = 14          # envit_score <= → bucket baix
-ENVIT_ALT = 28           # envit_score >= → bucket alt
-TRUC_FORTA = 218         # sum de forces de la mà >= → mà de truc forta (Q3 empíric)
-TRUC_FEBLE = 100         # sum de forces de la mà < → mà de truc fluixa (Q1 empíric)
+# Buckets (empirical quartiles de 20k samples)
+ENVIT_BAIX = 7           # envit_score <= 7   (Q1, 25% més baix)
+ENVIT_ALT = 29           # envit_score >= 29  (Q3, 25% més alt)
+TRUC_FORTA = 216         # força >= 216 (Q3, 25% més alt)
+TRUC_FEBLE = 160         # força < 160 (Q1, 25% més baix)
 
 
 def _forca_ma(hand) -> int:
