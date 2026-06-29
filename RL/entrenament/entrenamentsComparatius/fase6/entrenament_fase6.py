@@ -267,6 +267,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
     best_zip        = save_dir / "best"
     best_robust_zip = save_dir / "best_robust"
     best_nash_zip   = save_dir / "best_nash"
+    best_calib_zip  = save_dir / "best_calib"
     
     t0              = time.time()
     steps_fets      = [0]
@@ -286,6 +287,7 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
             self._last_progress = 0
             self._pbar = None
             self._evals_sense_millora = 0
+            self._best_calib = float('-inf')
 
         def _on_training_start(self) -> None:
             self._pbar = tqdm(total=timesteps, unit="step", dynamic_ncols=True)
@@ -434,11 +436,17 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     self.model.save(str(best_robust_zip))
                     nou_millor.append("MR")
 
+                # best_calib: millor calibració encontrada (independent de nash_valid)
+                calib_combined = (calib_envit + calib_truc) / 2
+                if calib_combined > self._best_calib:
+                    self._best_calib = calib_combined
+                    self.model.save(str(best_calib_zip))
+                    nou_millor.append("C")
+
                 # best_nash: només entre evals vàlids (no degenerats); early stopping equilibrat
                 # Exigeix millora SIMULTÀNIA tant de exploit_vs_sl com de calib_combined
                 if nash_valid:
                     millora_exploit = exploit_vs_sl < best_exploit_sl[0]
-                    calib_combined = (calib_envit + calib_truc) / 2
                     millora_calib = calib_combined > best_calib_combined[0]
                     
                     if millora_exploit and millora_calib:
