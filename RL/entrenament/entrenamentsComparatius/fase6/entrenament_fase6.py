@@ -220,10 +220,13 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         torch.backends.cudnn.benchmark = True
         print(f"[GPU] {torch.cuda.get_device_name(0)} (SL training)")
 
+    # Arquitectura reforçada per Fase 6: augmentar de [256,256] a [512,512]
+    HIDDEN_LAYERS_F6 = [512, 512]
+    
     policy_kwargs = dict(
         features_extractor_class=CosMultiInputSB3,
         features_extractor_kwargs=dict(features_dim=256),
-        net_arch=dict(pi=HIDDEN_LAYERS, vf=HIDDEN_LAYERS),
+        net_arch=dict(pi=HIDDEN_LAYERS_F6, vf=HIDDEN_LAYERS_F6),
         activation_fn=nn.ReLU,
     )
 
@@ -249,7 +252,9 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
     best_metric_val = [-1.0]
     best_robust     = [-1.0]
     best_exploit_sl = [100.0]
-    best_calib_envit = [-1.0]
+    best_calib_combined = [-1.0]  # Mètrica combinada: (calib_envit + calib_truc) / 2
+    best_calib_envit = [-1.0]     # Per logging
+    best_calib_truc  = [-1.0]     # Per logging
 
     best_zip        = save_dir / "best"
     best_robust_zip = save_dir / "best_robust"
@@ -382,15 +387,18 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                     self.model.save(str(best_robust_zip))
                     nou_millor.append("MR")
 
-                # best_nash: només entre evals vàlids (no degenerats); early stopping dual
-                # Exigeix millora SIMULTÀNIA tant de exploit_vs_sl com de calib_envit
+                # best_nash: només entre evals vàlids (no degenerats); early stopping equilibrat
+                # Exigeix millora SIMULTÀNIA tant de exploit_vs_sl com de calib_combined
                 if nash_valid:
                     millora_exploit = exploit_vs_sl < best_exploit_sl[0]
-                    millora_calib = calib_envit > best_calib_envit[0]
+                    calib_combined = (calib_envit + calib_truc) / 2
+                    millora_calib = calib_combined > best_calib_combined[0]
                     
                     if millora_exploit and millora_calib:
                         best_exploit_sl[0] = exploit_vs_sl
+                        best_calib_combined[0] = calib_combined
                         best_calib_envit[0] = calib_envit
+                        best_calib_truc[0] = calib_truc
                         self.model.save(str(best_nash_zip))
                         nou_millor.append("N")
                         self._evals_sense_millora = 0
@@ -421,8 +429,9 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
                 if nash_valid and self._evals_sense_millora >= nash_patience:
                     print(f"[{label}] EARLY STOP @ {t:,}: best_nash estable "
                           f"({nash_patience} evals vàlids sense millora dual), "
-                          f"exp_sl_min={best_exploit_sl[0]:.2f} pp, "
-                          f"calib_envit_max={best_calib_envit[0]:.1f} pp")
+                          f"exp_sl_min={best_exploit_sl[0]:.2f}%, "
+                          f"calib_combined_max={(best_calib_envit[0] + best_calib_truc[0])/2:.1f}pp "
+                          f"(envit={best_calib_envit[0]:.1f}pp, truc={best_calib_truc[0]:.1f}pp)")
                     return False
             return True
 
@@ -440,7 +449,8 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         
     print(f"[{label}] Complet. Millor metric: {best_metric_val[0]:.2f}%  "
           f"Millor metric_robust: {best_robust[0]:.2f}%  "
-          f"Millor Nash exploit: {best_exploit_sl[0]:.2f}%")
+          f"Millor Nash exploit: {best_exploit_sl[0]:.2f}% | calib_combined: {best_calib_combined[0]:.1f}pp "
+          f"(envit={best_calib_envit[0]:.1f}pp, truc={best_calib_truc[0]:.1f}pp)")
     return model
 
 
