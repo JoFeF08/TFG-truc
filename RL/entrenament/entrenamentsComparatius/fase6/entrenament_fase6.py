@@ -232,11 +232,17 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         activation_fn=nn.ReLU,
     )
 
-    if Path(model_inicial).exists():
+    # Detecta si s'ha passat --model_inicial "" per forçar entrenament de zero
+    use_model_inicial = model_inicial and model_inicial.strip() and Path(model_inicial).exists()
+    
+    if use_model_inicial:
         model = _carregar_model_inicial(model_inicial, vec_env, policy_kwargs, torch.device("cpu"))
         _aplicar_frozen(model, pesos_cos, lr=PPO_LR)
     else:
-        print(f"[F6] Model inicial no trobat ({model_inicial}), partint de zero.")
+        if model_inicial and model_inicial.strip():
+            print(f"[F6] Model inicial no trobat ({model_inicial}), partint de zero.")
+        else:
+            print(f"[F6] No s'ha especificat model inicial (--model_inicial ''), partint de zero.")
         model = PPO(
             "MlpPolicy", vec_env,
             learning_rate=PPO_LR, n_steps=n_steps, batch_size=batch_size,
