@@ -501,6 +501,8 @@ def _ppo_nfsp(save_dir: Path, timesteps: int, device,
         model.save(str(best_robust_zip))
     if not Path(str(best_nash_zip) + ".zip").exists():
         model.save(str(best_nash_zip))
+    if not Path(str(best_calib_zip) + ".zip").exists():
+        model.save(str(best_calib_zip))
         
     print(f"[{label}] Complet. Millor metric: {best_metric_val[0]:.2f}%  "
           f"Millor metric_robust: {best_robust[0]:.2f}%  "
