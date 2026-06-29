@@ -121,6 +121,7 @@ class AgentRegles:
     def _respondre_envit(self, raw, legal):
         es = self._envit_score(raw)
         per_propi, per_rival = self._score_context(raw)
+        envit_level = raw['estat_envit']['level']
 
         # % que representa l'envit dels punts que li falten a cada equip
         perill_rival = es / per_rival   # > 1: rival guanya el joc si guanya l'envit
@@ -148,6 +149,11 @@ class AgentRegles:
         # Soroll estocàstic (±2)
         llindar_puja    += self.rng.randint(-2, 2)
         llindar_accepta += self.rng.randint(-2, 2)
+
+        # Lògica estricta per nivells alts d'envit 
+        if envit_level >= 4:
+            llindar_puja = max(34 - (self.envit_agressio - 1.0) * 2, 32)
+            llindar_accepta = max(32 - (self.envit_agressio - 1.0) * 2, 30)
 
         if es >= llindar_puja and APOSTAR_ENVIT in legal:
             return APOSTAR_ENVIT
