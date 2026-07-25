@@ -1,4 +1,3 @@
-rlcard
 torch
 
 stable-baselines3

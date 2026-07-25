@@ -2,7 +2,7 @@ import sys
 import os
 import numpy as np
 from collections import OrderedDict
-from rlcard.envs.env import Env
+from joc.entorn.env import BaseTrucEnv
 
 try:
     if '__file__' in globals():
@@ -18,7 +18,7 @@ _PAL_IDX = {p: i for i, p in enumerate(PALS)}
 _NUM_IDX = {n: i for i, n in enumerate(NUMS)}
 
 
-class TrucEnvMa(Env):
+class TrucEnvMa(BaseTrucEnv):
     """
     Entorn per entrenar per mans individuals.
     Cada episodi = una mà. Done=True quan la mà acaba.

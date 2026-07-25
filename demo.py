@@ -1,22 +1,3 @@
-import importlib
-try:
-    import rlcard.envs.registration
-    _original_init = rlcard.envs.registration.EnvSpec.__init__
-    def _patched_init(self, env_id, entry_point=None):
-        self.env_id = env_id
-        if entry_point:
-            mod_name, class_name = entry_point.split(':')
-            try:
-                mod = importlib.import_module(mod_name)
-                self._entry_point = getattr(mod, class_name)
-            except (ImportError, ModuleNotFoundError):
-                self._entry_point = None
-        else:
-            self._entry_point = None
-    rlcard.envs.registration.EnvSpec.__init__ = _patched_init
-except Exception:
-    pass
-
 from joc.controlador import Controlador, ModelInteractiu
 from joc.vista.vista_desktop.vista_desktop import VistaDesktop
 
@@ -39,15 +20,18 @@ def resource_path(relative_path):
 
 
 # Pesos de producció: best.zip del re-run corregit de F6 (model desplegat, Checkpoint 3).
-MODEL_PATH = resource_path("TFG_Doc/notebooks/7_checkpoint3/ppo_nfsp_rerun/best.zip")
-TIPUS_AGENT = "sb3"          # "sb3" | "nfsp_sl" | "regles"
+MODEL_PATH = resource_path("TFG_Doc\\notebooks\\6_nfsp\\resultats\\ppo_nfsp\\best.zip")
+TIPUS_AGENT = "regles"       # "sb3" | "nfsp_sl" | "regles"
 ALGORISME    = "ppo"         # només per "sb3": "ppo" | "dqn" | "ppo_lstm"
+VARIANT_REGLES = "conservador"  # només per "regles": conservador|agressiu|truc_bot|envit_bot|faroler|equilibrat
 
 PARTIDES_SESSIO = 1
 
 # Spec del jugador IA segons el tipus
 if TIPUS_AGENT == "sb3":
     _spec_ia = {"tipus": "sb3", "algorisme": ALGORISME, "ruta": MODEL_PATH}
+elif TIPUS_AGENT == "regles":
+    _spec_ia = {"tipus": "regles", "variant": VARIANT_REGLES}
 else:
     _spec_ia = {"tipus": TIPUS_AGENT, "ruta": MODEL_PATH}
 

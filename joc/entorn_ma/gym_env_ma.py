@@ -29,17 +29,17 @@ class TrucGymEnvMa(gymnasium.Env):
         from joc.entorn_ma.env_ma import TrucEnvMa
         from joc.entorn.cartes_accions import ACTION_LIST
 
-        self.rlcard_env = TrucEnvMa(env_config)
+        self.truc_env = TrucEnvMa(env_config)
         self.learner_pid = learner_pid
         self.n_actions = len(ACTION_LIST)
 
         if opponent is None:
-            from rlcard.agents import RandomAgent
+            from RL.models.model_propi.random_agent import RandomAgent
             self.opponent = RandomAgent(num_actions=self.n_actions)
         else:
             self.opponent = opponent
 
-        dummy_state, _ = self.rlcard_env.reset()
+        dummy_state, _ = self.truc_env.reset()
         obs_dim = self._flatten_obs(dummy_state).shape[0]
 
         self.observation_space = spaces.Box(
@@ -69,7 +69,7 @@ class TrucGymEnvMa(gymnasium.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        state, player_id = self.rlcard_env.reset()
+        state, player_id = self.truc_env.reset()
         state, player_id, pending = self._skip_opponent_turns(state, player_id)
         self._pending_reward = pending
 
@@ -87,13 +87,13 @@ class TrucGymEnvMa(gymnasium.Env):
         if action not in self._legal_actions:
             action = self._legal_actions[0]
 
-        state, player_id = self.rlcard_env.step(action)
+        state, player_id = self.truc_env.step(action)
         done = (player_id is None)
         reward = self._pending_reward
         self._pending_reward = 0.0
 
         if done:
-            payoffs = self.rlcard_env.game.get_payoffs()
+            payoffs = self.truc_env.game.get_payoffs()
             reward += float(payoffs[self.learner_pid])
             return self._last_obs.copy(), reward, True, False, {}
 
@@ -101,10 +101,10 @@ class TrucGymEnvMa(gymnasium.Env):
 
         while player_id != self.learner_pid and player_id is not None:
             opp_action, _ = self.opponent.eval_step(state)
-            state, player_id = self.rlcard_env.step(opp_action)
+            state, player_id = self.truc_env.step(opp_action)
 
             if player_id is None:
-                payoffs = self.rlcard_env.game.get_payoffs()
+                payoffs = self.truc_env.game.get_payoffs()
                 reward += float(payoffs[self.learner_pid])
                 return self._last_obs.copy(), reward, True, False, {}
 
@@ -122,7 +122,7 @@ class TrucGymEnvMa(gymnasium.Env):
         reward_acc = 0.0
         while player_id != self.learner_pid and player_id is not None:
             opp_action, _ = self.opponent.eval_step(state)
-            state, player_id = self.rlcard_env.step(opp_action)
+            state, player_id = self.truc_env.step(opp_action)
             if player_id is not None:  # no acumular si la partida ha acabat
                 reward_acc += self._reward_from_raw(state)
         return state, player_id, reward_acc

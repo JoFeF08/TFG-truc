@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import sys
 import os
 import numpy as np
 from collections import OrderedDict
-from rlcard.envs.env import Env
 
 try:
     if '__file__' in globals():
@@ -20,10 +21,115 @@ _NUM_IDX = {n: i for i, n in enumerate(NUMS)}    # {'1':0,'3':1,'4':2,...,'12':8
 
 OBS_CONTEXT_SIZE = 24
 
-class TrucEnv(Env):
+
+class BaseTrucEnv:
+    """Base comuna per als entorns de Truc (TrucEnv, TrucEnvMa): reset/step
+    turn-based sobre un `self.game`, seeding i un mode `run()` per jugar
+    partides senceres amb agents `eval_step()`/`step()`."""
+
+    def __init__(self, config: dict) -> None:
+        self.allow_step_back = self.game.allow_step_back = config.get('allow_step_back', False)
+        self.action_recorder: list = []
+
+        self.num_players = self.game.get_num_players()
+        self.num_actions = self.game.get_num_actions()
+
+        self.timestep = 0
+        self.seed(config.get('seed'))
+
+    def reset(self):
+        state, player_id = self.game.init_game()
+        self.action_recorder = []
+        return self._extract_state(state), player_id
+
+    def step(self, action, raw_action: bool = False):
+        if not raw_action:
+            action = self._decode_action(action)
+
+        self.timestep += 1
+        self.action_recorder.append((self.get_player_id(), action))
+        next_state, player_id = self.game.step(action)
+
+        return self._extract_state(next_state), player_id
+
+    def step_back(self):
+        if not self.allow_step_back:
+            raise Exception("Step back is off. Cal allow_step_back=True per fer-lo servir.")
+
+        if not self.game.step_back():
+            return False
+
+        player_id = self.get_player_id()
+        state = self.get_state(player_id)
+        return state, player_id
+
+    def set_agents(self, agents) -> None:
+        """Agents que interactuaran amb l'entorn. Cal cridar-ho abans de `run()`."""
+        self.agents = agents
+
+    def run(self, is_training: bool = False):
+        """Juga una partida completa amb els agents fixats via `set_agents()`."""
+        trajectories: list = [[] for _ in range(self.num_players)]
+        state, player_id = self.reset()
+
+        trajectories[player_id].append(state)
+        while not self.is_over():
+            if not is_training:
+                action, _ = self.agents[player_id].eval_step(state)
+            else:
+                action = self.agents[player_id].step(state)
+
+            next_state, next_player_id = self.step(action, self.agents[player_id].use_raw)
+            trajectories[player_id].append(action)
+
+            state = next_state
+            player_id = next_player_id
+
+            if not self.game.is_over():
+                trajectories[player_id].append(state)
+
+        for player_id in range(self.num_players):
+            trajectories[player_id].append(self.get_state(player_id))
+
+        return trajectories, self.get_payoffs()
+
+    def is_over(self) -> bool:
+        return self.game.is_over()
+
+    def get_player_id(self) -> int:
+        return self.game.get_player_id()
+
+    def get_state(self, player_id: int):
+        return self._extract_state(self.game.get_state(player_id))
+
+    def get_payoffs(self):
+        raise NotImplementedError
+
+    def get_action_feature(self, action: int) -> np.ndarray:
+        feature = np.zeros(self.num_actions, dtype=np.int8)
+        feature[action] = 1
+        return feature
+
+    def seed(self, seed: int | None = None) -> int | None:
+        self.np_random = np.random.RandomState(seed)
+        self.game.np_random = self.np_random
+        return seed
+
+    def _extract_state(self, state):
+        raise NotImplementedError
+
+    def _decode_action(self, action_id: int):
+        raise NotImplementedError
+
+    def _get_legal_actions(self):
+        raise NotImplementedError
+
+
+class TrucEnv(BaseTrucEnv):
     """
-    Entorn del joc del Truc per a RLCard.
-    Aquesta classe connecta la lògica del joc (TrucGame) amb la interfície estàndard d'entorns de RLCard.
+    Entorn del joc del Truc.
+    Aquesta classe connecta la lògica del joc (TrucGame) amb una interfície
+    estàndard d'entorn turn-based (reset/step/run) reutilitzada per TrucEnvMa.
     """
     def __init__(self, config):
         self.name = 'truc'
