@@ -323,6 +323,7 @@ class TrucGameMa:
         state['ma'] = self.ma
         state['comptador_ma'] = self.comptador_ma
         state['puntuacio'] = self.score
+        state['puntuacio_final'] = self.puntuacio_final
 
         state['comptador_ronda'] = self.round_counter
         state['fase_torn'] = self.turn_phase

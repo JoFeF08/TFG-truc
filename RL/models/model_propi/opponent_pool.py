@@ -12,9 +12,39 @@ from typing import Optional
 
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.random_agent import RandomAgent
-from RL.models.model_propi.agent_regles import AgentRegles
+from RL.models.model_propi.agent_regles import AgentRegles, ESTILS
 
 N_ACTIONS = len(ACTION_LIST)
+
+# Pes de mostreig entre estils d'AgentRegles. No es uniforme a proposit:
+# tot i el calibratge, 'agressiu'/'farol' segueixen guanyant una mica mes
+# sovint en enfrontaments regles-vs-regles (~52-55% de mitjana). Per no
+# esbiaixar l'exposicio d'entrenament cap a "blofejar sempre", es baixa
+# el seu pes de mostreig i es puja el de 'conservador'/'equilibrat'.
+PESOS_ESTIL = {'conservador': 0.30, 'equilibrat': 0.30, 'agressiu': 0.22, 'farol': 0.18}
+
+
+def _marcador_aleatori(rng: random.Random) -> tuple:
+    """Mostreja un escenari de marcador (propi, rival) variat perquè la
+    lògica adaptativa d'AgentRegles s'exerciti durant l'entrenament (les
+    mans d'entrenament sempre comencen 0-0 i mai ho reflectirien soles)."""
+    escenari = rng.choices(
+        ['empat', 'avantatge', 'desavantatge', 'final'],
+        weights=[0.3, 0.25, 0.25, 0.2], k=1,
+    )[0]
+    if escenari == 'empat':
+        p = rng.randint(0, 18)
+        return (p, p)
+    if escenari == 'avantatge':
+        propi = rng.randint(6, 23)
+        return (propi, max(0, propi - rng.randint(3, 12)))
+    if escenari == 'desavantatge':
+        rival = rng.randint(6, 23)
+        return (max(0, rival - rng.randint(3, 12)), rival)
+    # final: algú a prop de guanyar (24)
+    if rng.random() < 0.5:
+        return (rng.randint(18, 23), rng.randint(0, 20))
+    return (rng.randint(0, 20), rng.randint(18, 23))
 
 
 class OpponentPool:
@@ -64,12 +94,19 @@ class OpponentPool:
             return RandomAgent(num_actions=N_ACTIONS, seed=self.rng.randrange(1 << 30))
 
         if tipus == 'regles':
+            estil = self.rng.choices(list(PESOS_ESTIL.keys()), weights=list(PESOS_ESTIL.values()), k=1)[0]
+            base = ESTILS[estil]
+
+            def _jitter(v):
+                return v * self.rng.uniform(0.9, 1.1)
+
             return AgentRegles(
                 seed=self.rng.randrange(1 << 30),
-                truc_agressio=self.rng.uniform(0.6, 1.4),
-                envit_agressio=self.rng.uniform(0.6, 1.4),
-                farol_prob=self.rng.uniform(0.05, 0.25),
-                resposta_truc=self.rng.uniform(0.7, 1.3),
+                truc_agressio=_jitter(base['truc_agressio']),
+                envit_agressio=_jitter(base['envit_agressio']),
+                farol_prob=_jitter(base['farol_prob']),
+                resposta_truc=_jitter(base['resposta_truc']),
+                marcador_simulat=_marcador_aleatori(self.rng),
             )
 
         path = self.rng.choice(checkpoints)

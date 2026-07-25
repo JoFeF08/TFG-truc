@@ -16,21 +16,85 @@ PASSAR = ACTION_SPACE['passar']
 
 FORCA_TOP = 90  # 3s, manilles, asos forts, B11, O10
 
+# Estils curats en lloc de mostreig continu lliure de 4 parametres
+# independents (que acabava produint sobretot variants "agressives" i cap
+# d'unica dominant).
+#
+# Important: la variacio nomes es fa en la FREQUENCIA d'iniciar/blofejar
+# (truc_agressio/envit_agressio/farol_prob). `resposta_truc` (disciplina
+# per acceptar un truc/envit ja fet) es manté alta i similar a tots els
+# estils: cap n'es un "pushover" que cedeixi nomes per pressio bruta. Si
+# es deixa que "es rendeix facil sota pressio" fos la feblesa de mes d'un
+# estil, la contraestrategia dominant acaba sent trivial ("empenyer sempre
+# i no rendir-se mai"), i un agent entrenat contra aquest pool aprendria a
+# blofejar fins al final en lloc de jugar be. L'explotacio de cada estil
+# ha de venir de llegir-ne el patro (acceptar-li quan se sap que bloqueja
+# sovint), no de pressio bruta.
+#   conservador -> inicia poc -> cedeix la iniciativa, dona marge a l'altre.
+#   equilibrat  -> valors de referencia.
+#   agressiu    -> inicia molt -> exposa mans mediocres sovint, explotable
+#                  per qui l'accepti/torni a pujar amb criteri.
+#   farol       -> el mateix pero encara mes extrem amb els farols purs.
+#
+# Calibratge en dues fases (script fora del repo, RL/tools/calibrar_estils
+# si es promou): (1) arbre de decisio/regressio (sklearn) sobre ~200
+# configuracions aleatories, que va aillar una unica regio "robusta" a les
+# cantonades extremes (farol_prob > 0.14, truc_agressio > 1.32,
+# envit_agressio > 1.28), on cauen 'agressiu'/'farol'; (2) cerca local per
+# apujar 'conservador'/'equilibrat' i estrenyer el marge de victories.
+#
+# Important: la primera ronda de mesures tenia un biaix metodologic -- el
+# candidat avaluat sempre seia de "ma" (TrucGameMa fixa ma=0 sempre), i
+# "ma" resulta ser ~8pp PITJOR posicio en aquest joc (qui respon veu la
+# carta rival abans de jugar la seva). Un cop corregit alternant seients,
+# 'agressiu'/'farol' guanyaven ~55-57% de mitjana contra 'conservador'/
+# 'equilibrat' (~44-46%) -- massa marge -- i la cerca es va refer amb
+# aquesta metodologia corregida.
+#
+# 'farol' es va retocar un cop mes perque no quedes com "l'opcio clarament
+# mes forta" del grup (podria ensenyar a l'agent RL que blofejar sempre es
+# la resposta, en lloc de llegir quan val la pena): reduir nomes els 4
+# parametres no ho baixa gaire mes enlla d'un ~54-56% (sembla estructural,
+# no nomes calibratge), aixi que a mes de retocar els numeros es baixa el
+# pes de mostreig de 'farol'/'agressiu' a OpponentPool perque l'exposicio
+# d'entrenament quedi mes equilibrada encara que la seva força relativa
+# no arribi a ser identica.
+ESTILS = {
+    'conservador': dict(truc_agressio=1.00, envit_agressio=0.90, farol_prob=0.10, resposta_truc=0.98),
+    'equilibrat':  dict(truc_agressio=1.20, envit_agressio=1.15, farol_prob=0.16, resposta_truc=0.99),
+    'agressiu':    dict(truc_agressio=1.45, envit_agressio=1.35, farol_prob=0.20, resposta_truc=1.00),
+    'farol':       dict(truc_agressio=1.25, envit_agressio=1.20, farol_prob=0.24, resposta_truc=1.00),
+}
+
 
 class AgentRegles:
     use_raw = False
 
     def __init__(self, num_actions=19, seed=None,
-                 truc_agressio: float = 1.0,
-                 envit_agressio: float = 1.0,
-                 farol_prob: float = 0.12,
-                 resposta_truc: float = 1.0):
+                 estil: str | None = None,
+                 truc_agressio: float | None = None,
+                 envit_agressio: float | None = None,
+                 farol_prob: float | None = None,
+                 resposta_truc: float | None = None,
+                 marcador_simulat: tuple[int, int] | None = None):
         self.num_actions = num_actions
         self.rng = random.Random(seed)
-        self.truc_agressio = float(truc_agressio)
-        self.envit_agressio = float(envit_agressio)
-        self.farol_prob = float(farol_prob)
-        self.resposta_truc = float(resposta_truc)
+
+        base = ESTILS[estil] if estil is not None else ESTILS['equilibrat']
+        self.truc_agressio = float(truc_agressio if truc_agressio is not None else base['truc_agressio'])
+        self.envit_agressio = float(envit_agressio if envit_agressio is not None else base['envit_agressio'])
+        self.farol_prob = float(farol_prob if farol_prob is not None else base['farol_prob'])
+        self.resposta_truc = float(resposta_truc if resposta_truc is not None else base['resposta_truc'])
+
+        # Marcador simulat (propi, rival): com que cada mà d'entrenament es
+        # un episodi que sempre reinicia el marcador real a 0-0, la lògica
+        # adaptativa (agressiu si guanyant/perdent) mai s'exercita durant
+        # l'entrenament. Si es dona, substitueix el marcador real només per
+        # als càlculs interns d'aquest agent (útil per a l'OpponentPool).
+        self.marcador_simulat = marcador_simulat
+
+    def set_marcador_simulat(self, propi: int, rival: int) -> None:
+        self.marcador_simulat = (propi, rival)
 
     def step(self, state):
         action, _ = self.eval_step(state)
@@ -96,17 +160,26 @@ class AgentRegles:
     def _som_ma(self, raw):
         return raw['ma'] == raw['id_jugador']
 
+    def _marcador_efectiu(self, raw):
+        """Retorna (propi, rival). Fa servir el marcador simulat si se n'ha
+        donat un (entrenament per mans); si no, el marcador real de l'estat
+        (partida persistent, p.ex. GUI)."""
+        if self.marcador_simulat is not None:
+            return self.marcador_simulat
+        equip = raw['id_jugador'] % 2
+        return raw['puntuacio'][equip], raw['puntuacio'][1 - equip]
+
     def _avantatge_puntuacio(self, raw):
         """Retorna diferencia de puntuacio (positiu = anem per davant)."""
-        equip = raw['id_jugador'] % 2
-        return raw['puntuacio'][equip] - raw['puntuacio'][1 - equip]
+        propi, rival = self._marcador_efectiu(raw)
+        return propi - rival
 
     def _score_context(self, raw):
         """Retorna (per_guanyar_propi, per_guanyar_rival) en punts."""
-        equip = raw['id_jugador'] % 2
+        propi, rival = self._marcador_efectiu(raw)
         pf = raw.get('puntuacio_final', 24)
-        per_propi = max(1, pf - raw['puntuacio'][equip])
-        per_rival  = max(1, pf - raw['puntuacio'][1 - equip])
+        per_propi = max(1, pf - propi)
+        per_rival = max(1, pf - rival)
         return per_propi, per_rival
 
     def _fallback(self, legal):

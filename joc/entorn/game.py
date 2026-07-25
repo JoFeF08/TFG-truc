@@ -390,6 +390,7 @@ class TrucGame:
         state['ma'] = self.ma
         state['comptador_ma'] = self.comptador_ma
         state['puntuacio'] = self.score
+        state['puntuacio_final'] = self.puntuacio_final
 
         # --- ESTAT DEL TORN ---
         state['comptador_ronda'] = self.round_counter
