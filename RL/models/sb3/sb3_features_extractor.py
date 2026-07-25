@@ -2,34 +2,45 @@ import torch
 from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from RL.models.core.feature_extractor import CosMultiInput
+from RL.models.core.feature_extractor import CosMultiInput, DEFAULT_IN_CHANNELS, DEFAULT_CONTEXT_SIZE
 
 
 class CosMultiInputSB3(BaseFeaturesExtractor):
     """
     Adaptador perquè SB3 pugui utilitzar CosMultiInput amb una observació
-    Box(240,) aplanada (216 de obs_cartes + 24 de obs_context).
+    Box(N,) aplanada (obs_cartes.flatten() + obs_context, vegeu
+    joc.entorn.obs_builder). `in_channels`/`context_size` s'han de fer
+    coincidir amb la configuració (`num_jugadors`/`senyes`) de l'entorn.
 
     Ús:
         policy_kwargs = dict(
             features_extractor_class=CosMultiInputSB3,
-            features_extractor_kwargs=dict(features_dim=256),
+            features_extractor_kwargs=dict(in_channels=3, context_size=17),
             net_arch=[256, 256],
         )
-        model = DQN("MlpPolicy", env, policy_kwargs=policy_kwargs, ...)
+        model = MaskablePPO("MlpPolicy", env, policy_kwargs=policy_kwargs, ...)
 
         # Opcionalment, després de construir el model:
         model.policy.features_extractor.carregar_pesos_preentrenats(ruta)
         model.policy.features_extractor.congelar_cos()
     """
 
-    def __init__(self, observation_space: spaces.Box, features_dim: int = 256):
+    def __init__(
+        self,
+        observation_space: spaces.Box,
+        features_dim: int = 256,
+        in_channels: int = DEFAULT_IN_CHANNELS,
+        context_size: int = DEFAULT_CONTEXT_SIZE,
+    ):
         super().__init__(observation_space, features_dim)
-        self.cos = CosMultiInput()
+        self.in_channels = in_channels
+        self.context_size = context_size
+        self.n_cartes_flat = in_channels * 4 * 9
+        self.cos = CosMultiInput(in_channels=in_channels, context_size=context_size)
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        cartes = observations[:, :216].view(-1, 6, 4, 9)
-        context = observations[:, 216:]
+        cartes = observations[:, :self.n_cartes_flat].view(-1, self.in_channels, 4, 9)
+        context = observations[:, self.n_cartes_flat:]
         return self.cos(cartes, context)
 
     def carregar_pesos_preentrenats(self, ruta: str) -> None:

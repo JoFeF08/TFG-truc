@@ -21,10 +21,13 @@ from torch.utils.data import TensorDataset, DataLoader
 
 from joc.entorn.cartes_accions import PALS, NUMS, ACTION_LIST
 from joc.entorn.env import TrucEnv
+from joc.entorn.obs_builder import obs_shapes
 from joc.entorn.rols.judger import TrucJudger
 from RL.models.core.feature_extractor import ModelPreEntrenament
 
 # Constants
+ENV_CONFIG      = {'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 12, 'senyes': True}
+CARTES_SHAPE, CONTEXT_SIZE = obs_shapes(ENV_CONFIG['num_jugadors'], ENV_CONFIG['senyes'])
 MIDA_DATASET    = 200_000
 VAL_SPLIT       = 0.2
 BATCH_SIZE      = 256
@@ -33,7 +36,7 @@ NUM_EPOCHS      = 100
 LR              = 0.001
 WEIGHT_DECAY    = 1e-4
 PATIENCE        = 10
-N_CARTES_MA     = 3       
+N_CARTES_MA     = 3
 ENVIT_MAX       = 35
 N_ACCIONS       = len(ACTION_LIST)
 
@@ -61,14 +64,14 @@ def generar_dataset_estatic(num_mostres: int, env_base=None):
     Genera un dataset de dades totalment coherents fent servir instàncies reals
     de l'entorn de joc (TrucEnv).
     """
-    cartes_np  = np.zeros((num_mostres, 6, 4, 9), dtype=np.float32)
-    context_np = np.zeros((num_mostres, 24), dtype=np.float32)
+    cartes_np  = np.zeros((num_mostres, *CARTES_SHAPE), dtype=np.float32)
+    context_np = np.zeros((num_mostres, CONTEXT_SIZE), dtype=np.float32)
     labels_envit_np = np.zeros((num_mostres, 1), dtype=np.float32)
     labels_accions_np= np.zeros((num_mostres, 19), dtype=np.float32)
     labels_forces_np = np.zeros((num_mostres, 3), dtype=np.float32)
 
     if env_base is None:
-        env_base = TrucEnv(config={'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 12, 'senyes': True})
+        env_base = TrucEnv(config=ENV_CONFIG)
 
     mostres_recollides = 0
     pbar = tqdm(total=num_mostres, desc="Generant dataset sintètic (Augment complexitat)")
@@ -141,7 +144,7 @@ def entrenar():
           f"dataset={MIDA_DATASET}, batch={BATCH_SIZE}, lr={LR}, wd={WEIGHT_DECAY}\n")
 
     # Validation Split
-    env_generador = TrucEnv(config={'num_jugadors': 2, 'cartes_jugador': 3, 'puntuacio_final': 12, 'senyes': True})
+    env_generador = TrucEnv(config=ENV_CONFIG)
     t_cartes, t_context, t_lenv, t_lacc, t_lforces = generar_dataset_estatic(MIDA_DATASET, env_generador)
 
     dataset_complet = TensorDataset(t_cartes, t_context, t_lenv, t_lacc, t_lforces)
@@ -155,7 +158,7 @@ def entrenar():
     
     print(f"Dataset split completat: Train={n_train}, Val={n_val}")
 
-    model = ModelPreEntrenament().to(DEVICE)
+    model = ModelPreEntrenament(in_channels=CARTES_SHAPE[0], context_size=CONTEXT_SIZE).to(DEVICE)
     optimitzador = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimitzador, mode='min', factor=0.5, patience=5)
 

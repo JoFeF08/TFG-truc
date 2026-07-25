@@ -29,13 +29,17 @@ class TrucGameMa:
     Quan la mà acaba, retorna (state, None) per senyalar done=True.
     No hi ha rewards intermedis durant la mà.
     """
-    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=999, player_class=TrucPlayer, verbose=False):
+    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=999, player_class=TrucPlayer, verbose=False, permetre_apostes=True, permetre_truc=True):
         self.num_jugadors = num_jugadors
         self.cartes_jugador = cartes_jugador
         self.senyes = senyes
         self.puntuacio_final = puntuacio_final
         self.player_class = player_class
         self.verbose = verbose
+        # Currículum: permetre_apostes=False -> només jugar cartes (sense truc/envit).
+        # permetre_apostes=True, permetre_truc=False -> cartes + envit, sense truc.
+        self.permetre_apostes = permetre_apostes
+        self.permetre_truc = permetre_truc
 
         self.np_random = np.random.RandomState()
         self.payoffs = [0] * self.num_jugadors
@@ -382,11 +386,12 @@ class TrucGameMa:
             return actions
 
         if self.turn_phase == 1:
-            if self.envit_level == 0 and self.round_counter == 0:
-                actions.append(ACTION_SPACE['apostar_envit'])
-            if self.truc_owner != self.current_player:
-                actions.append(ACTION_SPACE['apostar_truc'])
-            actions.append(ACTION_SPACE['fora_truc'])
+            if self.permetre_apostes:
+                if self.envit_level == 0 and self.round_counter == 0:
+                    actions.append(ACTION_SPACE['apostar_envit'])
+                if self.permetre_truc and self.truc_owner != self.current_player and self.truc_level < 24:
+                    actions.append(ACTION_SPACE['apostar_truc'])
+                actions.append(ACTION_SPACE['fora_truc'])
             num_cards = len(player.hand)
             for i in range(num_cards):
                 actions.append(ACTION_SPACE[f'play_card_{i}'])
@@ -411,8 +416,9 @@ class TrucGameMa:
         score = self.score
         payoffs = []
         for pid in range(self.num_jugadors):
-            oponent = (pid + 1) % 2
-            delta = score[pid] - score[oponent]
+            equip = pid % 2
+            oponent = 1 - equip
+            delta = score[equip] - score[oponent]
             if delta > 0:
                 payoffs.append(1.0)
             elif delta < 0:

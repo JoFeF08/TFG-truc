@@ -475,8 +475,8 @@ class TrucGame:
             if self.envit_level == 0 and self.round_counter == 0:
                  actions.append(ACTION_SPACE['apostar_envit'])
             
-            # Truc: Si no som propietaris de l'aposta actual
-            if self.truc_owner != self.current_player:    
+            # Truc: Si no som propietaris de l'aposta actual i encara no hem arribat al topall
+            if self.truc_owner != self.current_player and self.truc_level < 24:
                  actions.append(ACTION_SPACE['apostar_truc'])
             
             actions.append(ACTION_SPACE['fora_truc'])
@@ -514,9 +514,10 @@ class TrucGame:
         payoffs = []
 
         for pid in range(self.num_jugadors):
-            oponent = (pid + 1) % 2
-            delta = score[pid] - score[oponent]
-            
+            equip = pid % 2
+            oponent = 1 - equip
+            delta = score[equip] - score[oponent]
+
             if delta > 0:
                 payoffs.append(1.0)
             elif delta < 0:
