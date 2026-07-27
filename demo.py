@@ -19,11 +19,14 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-# Pesos de producció: best.zip del re-run corregit de F6 (model desplegat, Checkpoint 3).
-MODEL_PATH = resource_path("TFG_Doc\\notebooks\\6_nfsp\\resultats\\ppo_nfsp\\best.zip")
-TIPUS_AGENT = "regles"       # "sb3" | "nfsp_sl" | "regles"
-ALGORISME    = "ppo"         # només per "sb3": "ppo" | "dqn" | "ppo_lstm"
-VARIANT_REGLES = "conservador"  # només per "regles": conservador|agressiu|truc_bot|envit_bot|faroler|equilibrat
+# Pesos: entrenament --stage cartes --opponent mixt (mans sense apostes).
+# Checkpoint de 1.6M, no el "final" (2M) -- mesurat empíricament millor
+# (59.0% vs Random, enfront del 56.3% del final; corba d'aprenentatge amb
+# una petita davallada als últims ~400k passos).
+MODEL_PATH = resource_path("RL\\entrenament\\registres_sb3\\25_07_26_a_les_1725\\pool\\ppo_truc_1600000_steps.zip")
+TIPUS_AGENT = "sb3"          # "sb3" | "nfsp_sl" | "regles"
+ALGORISME    = "maskable_ppo"  # només per "sb3": "maskable_ppo" | "ppo" | "dqn" | "ppo_lstm"
+VARIANT_REGLES = "conservador"  # només per "regles": conservador|equilibrat|agressiu|farol
 
 PARTIDES_SESSIO = 1
 
@@ -40,6 +43,10 @@ config = {
     "cartes_jugador": 3,
     "senyes": False,
     "puntuacio_final": 24,
+    # El model es va entrenar en l'etapa "cartes" del currículum (sense
+    # truc ni envit) -- cal jugar-hi en les mateixes condicions.
+    "permetre_apostes": False,
+    "permetre_truc": False,
     "tipus_jugadors": {
         0: {"tipus": "huma"},
         1: _spec_ia,

@@ -1,5 +1,6 @@
 import sys
 import os
+import random
 import numpy as np
 
 try:
@@ -34,7 +35,8 @@ class TrucGymEnvMa(gymnasium.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, env_config: dict, opponent=None, opponent_pool=None, learner_pid: int = 0):
+    def __init__(self, env_config: dict, opponent=None, opponent_pool=None, learner_pid: int = 0,
+                 reward_scale: float = 1.0, randomitzar_seient: bool = True):
         super().__init__()
 
         from joc.entorn_ma.env_ma import TrucEnvMa
@@ -43,6 +45,18 @@ class TrucGymEnvMa(gymnasium.Env):
         self.truc_env = TrucEnvMa(env_config)
         self.learner_pid = learner_pid
         self.n_actions = len(ACTION_LIST)
+        # TrucGameMa fixa ma=0 sempre (qui lidera primer); sense això,
+        # l'aprenent sempre seria "mà" (~8pp de desavantatge mesurat) i mai
+        # aprendria a jugar com a responedor -- discrepància real amb
+        # l'avaluació (que sí alterna seients). Per defecte, es sorteja quin
+        # seient ocupa l'aprenent a cada reset().
+        self.randomitzar_seient = randomitzar_seient
+        self._rng_seient = random.Random()
+        # Amb apostes desactivades (etapa "cartes") el marge de punts és
+        # sempre ±1/24≈0.042 -- una recompensa molt feble per als
+        # hiperparàmetres per defecte de PPO. reward_scale permet escalar-la
+        # a un rang més amistós sense canviar la semàntica (relatiu).
+        self.reward_scale = reward_scale
 
         self.opponent_pool = opponent_pool
         self._fixed_opponent = opponent
@@ -74,7 +88,7 @@ class TrucGymEnvMa(gymnasium.Env):
         ri = raw.get('reward_intermedis', [0.0, 0.0])
         equip = self.learner_pid % 2
         if isinstance(ri, (list, tuple)) and len(ri) > equip:
-            return float(ri[equip])
+            return float(ri[equip]) * self.reward_scale
         return 0.0
 
     def set_opponent(self, opponent) -> None:
@@ -82,6 +96,9 @@ class TrucGymEnvMa(gymnasium.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+
+        if self.randomitzar_seient:
+            self.learner_pid = self._rng_seient.randint(0, 1)
 
         self.opponent = self._fixed_opponent if self._fixed_opponent is not None else self.opponent_pool.sample()
 

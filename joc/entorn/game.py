@@ -23,13 +23,17 @@ class ResponseState(Enum):
 
 
 class TrucGame:
-    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=TrucPlayer, verbose=False):
+    def __init__(self, num_jugadors=2, cartes_jugador=3, senyes=False, puntuacio_final=24, player_class=TrucPlayer, verbose=False, permetre_apostes=True, permetre_truc=True):
         self.num_jugadors = num_jugadors
         self.cartes_jugador = cartes_jugador
         self.senyes = senyes
         self.puntuacio_final = puntuacio_final
         self.player_class = player_class
         self.verbose = verbose
+        # Permet jugar mans sense truc/envit (p.ex. per enfrontar-se a un
+        # model entrenat només amb joc de cartes, sense apostes).
+        self.permetre_apostes = permetre_apostes
+        self.permetre_truc = permetre_truc
 
         self.np_random = np.random.RandomState()
         self.payoffs = [0] * self.num_jugadors
@@ -471,17 +475,18 @@ class TrucGame:
             return actions
 
         # Fase 1: Joc i Apostes
-        if self.turn_phase == 1:            
-            # Envit: Només si ningú ha cantat res encara i primera ronda
-            if self.envit_level == 0 and self.round_counter == 0:
-                 actions.append(ACTION_SPACE['apostar_envit'])
-            
-            # Truc: Si no som propietaris de l'aposta actual i encara no hem arribat al topall
-            if self.truc_owner != self.current_player and self.truc_level < 24:
-                 actions.append(ACTION_SPACE['apostar_truc'])
-            
-            actions.append(ACTION_SPACE['fora_truc'])
-            
+        if self.turn_phase == 1:
+            if self.permetre_apostes:
+                # Envit: Només si ningú ha cantat res encara i primera ronda
+                if self.envit_level == 0 and self.round_counter == 0:
+                     actions.append(ACTION_SPACE['apostar_envit'])
+
+                # Truc: Si no som propietaris de l'aposta actual i encara no hem arribat al topall
+                if self.permetre_truc and self.truc_owner != self.current_player and self.truc_level < 24:
+                     actions.append(ACTION_SPACE['apostar_truc'])
+
+                actions.append(ACTION_SPACE['fora_truc'])
+
             num_cards = len(player.hand)
             for i in range(num_cards):
                 actions.append(ACTION_SPACE[f'play_card_{i}'])

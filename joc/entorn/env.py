@@ -134,20 +134,26 @@ class TrucEnv(BaseTrucEnv):
         senyes = config.get('senyes', False)
         verbose = config.get('verbose', False)
         player_class = config.get('player_class', None)
+        permetre_apostes = config.get('permetre_apostes', True)
+        permetre_truc = config.get('permetre_truc', True)
 
         if player_class:
-            self.game = TrucGame(num_jugadors=self.num_jugadors, 
-                                 cartes_jugador=self.cartes_jugador, 
+            self.game = TrucGame(num_jugadors=self.num_jugadors,
+                                 cartes_jugador=self.cartes_jugador,
                                  senyes=senyes,
                                  puntuacio_final=self.puntuacio_final,
                                  player_class=player_class,
-                                 verbose=verbose)
+                                 verbose=verbose,
+                                 permetre_apostes=permetre_apostes,
+                                 permetre_truc=permetre_truc)
         else:
-             self.game = TrucGame(num_jugadors=self.num_jugadors, 
-                                 cartes_jugador=self.cartes_jugador, 
+             self.game = TrucGame(num_jugadors=self.num_jugadors,
+                                 cartes_jugador=self.cartes_jugador,
                                  senyes=senyes,
                                  puntuacio_final=self.puntuacio_final,
-                                 verbose=verbose)
+                                 verbose=verbose,
+                                 permetre_apostes=permetre_apostes,
+                                 permetre_truc=permetre_truc)
         
         config.setdefault('allow_step_back', False)
         config.setdefault('seed', None)

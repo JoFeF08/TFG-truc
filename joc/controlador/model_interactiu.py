@@ -56,6 +56,8 @@ class ModelInteractiu:
             puntuacio_final=config.get("puntuacio_final", 24),
             player_class=player_classes,
             verbose=config.get("verbose", False),
+            permetre_apostes=config.get("permetre_apostes", True),
+            permetre_truc=config.get("permetre_truc", True),
         )
         self._game.init_game()
 

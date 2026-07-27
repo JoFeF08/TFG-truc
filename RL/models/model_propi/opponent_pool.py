@@ -13,6 +13,7 @@ from typing import Optional
 from joc.entorn.cartes_accions import ACTION_LIST
 from RL.models.model_propi.random_agent import RandomAgent
 from RL.models.model_propi.agent_regles import AgentRegles, ESTILS
+from RL.models.model_propi.agent_probabilistic import AgentProbabilistic
 
 N_ACTIONS = len(ACTION_LIST)
 
@@ -57,7 +58,7 @@ class OpponentPool:
 
     def __init__(self, pool_dir: Optional[str] = None, pesos: Optional[dict] = None, seed: Optional[int] = None):
         self.pool_dir = Path(pool_dir) if pool_dir else None
-        self.pesos = pesos or {'random': 0.2, 'regles': 0.5, 'pool': 0.3}
+        self.pesos = pesos or {'random': 0.2, 'regles': 0.5, 'pool': 0.3, 'probabilistic': 0.0}
         self.rng = random.Random(seed)
         self._cache_checkpoints: dict = {}
 
@@ -77,8 +78,12 @@ class OpponentPool:
 
     def sample(self):
         """Sorteja i retorna un agent oponent nou (eval_step-compatible)."""
-        opcions = ['random', 'regles']
-        pesos = [self.pesos.get('random', 0.0), self.pesos.get('regles', 0.0)]
+        opcions = ['random', 'regles', 'probabilistic']
+        pesos = [
+            self.pesos.get('random', 0.0),
+            self.pesos.get('regles', 0.0),
+            self.pesos.get('probabilistic', 0.0),
+        ]
 
         checkpoints = self._checkpoints_disponibles()
         if checkpoints:
@@ -92,6 +97,12 @@ class OpponentPool:
 
         if tipus == 'random':
             return RandomAgent(num_actions=N_ACTIONS, seed=self.rng.randrange(1 << 30))
+
+        if tipus == 'probabilistic':
+            # Determinització/minimax (RL/models/model_propi/agent_probabilistic.py):
+            # jugador quasi-òptim per al subjoc de cartes, ~40ms/mà de cost.
+            # Delega a AgentRegles si hi ha apostes actives.
+            return AgentProbabilistic(seed=self.rng.randrange(1 << 30))
 
         if tipus == 'regles':
             estil = self.rng.choices(list(PESOS_ESTIL.keys()), weights=list(PESOS_ESTIL.values()), k=1)[0]
