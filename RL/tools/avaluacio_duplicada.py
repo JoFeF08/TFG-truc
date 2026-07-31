@@ -77,6 +77,9 @@ def _rival_factory(nom: str, model_y_path: str | None):
     if nom == "probabilistic":
         from RL.models.model_propi.agent_probabilistic import AgentProbabilistic
         return lambda s: AgentProbabilistic(seed=s)
+    if nom == "cfr":
+        from RL.models.model_propi.agent_cfr import AgentCFR
+        return lambda s: AgentCFR(seed=s)
     if nom == "model":
         if not model_y_path:
             raise ValueError("--model_y és obligatori quan --rival model")

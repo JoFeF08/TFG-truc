@@ -36,6 +36,20 @@ def crear_model(spec: dict[str, Any], env_config: dict[str, Any]) -> TrucModel |
         agent = AgentRegles(num_actions=env.num_actions, seed=spec.get("seed"))
         return EvalStepModelAdapter(agent, env._extract_state)
 
+    if tipus == "probabilistic":
+        from RL.models.model_propi.model_adapter import EvalStepModelAdapter
+        from RL.models.model_propi.agent_probabilistic import AgentProbabilistic
+        env = _build_env(env_config)
+        agent = AgentProbabilistic(seed=spec.get("seed"))
+        return EvalStepModelAdapter(agent, env._extract_state)
+
+    if tipus == "cfr":
+        from RL.models.model_propi.model_adapter import EvalStepModelAdapter
+        from RL.models.model_propi.agent_cfr import AgentCFR
+        env = _build_env(env_config)
+        agent = AgentCFR(seed=spec.get("seed"))
+        return EvalStepModelAdapter(agent, env._extract_state)
+
     if tipus == "sb3":
         from RL.models.model_propi.model_adapter import EvalStepModelAdapter
         from RL.models.sb3.sb3_adapter import SB3PPOEvalAgent
