@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from joc.entorn.game import TrucGame
 from joc.entorn.cartes_accions import ACTION_LIST
 from joc.entorn.rols.player import TrucPlayer
@@ -59,6 +61,15 @@ class ModelInteractiu:
             permetre_apostes=config.get("permetre_apostes", True),
             permetre_truc=config.get("permetre_truc", True),
         )
+
+        # Opcional: fixa el barrejador abans de repartir, perquè es pugui
+        # reproduir EXACTAMENT el mateix repartiment en una altra partida
+        # (verificació doble / repartiments duplicats). Si no es dona, es
+        # comporta com sempre (barreja aleatòria normal).
+        deal_seed = config.get("deal_seed")
+        if deal_seed is not None:
+            self._game.np_random = np.random.RandomState(deal_seed)
+
         self._game.init_game()
 
     def get_estat(self, jugador_id: int) -> dict:
