@@ -142,6 +142,7 @@ def main() -> None:
             resume_path = checkpoints[-1]
         print(f"Represa des de: {resume_path}")
         model = MaskablePPO.load(str(resume_path), env=env, ent_coef=args.ent_coef, target_kl=args.target_kl)
+        print(f"Passos ja fets: {model.num_timesteps:,} / objectiu {args.total_timesteps:,}")
     else:
         policy_kwargs = dict(
             features_extractor_class=CosMultiInputSB3,
@@ -171,8 +172,21 @@ def main() -> None:
         name_prefix="ppo_truc",
     )
 
+    # SB3 tracta `total_timesteps` de .learn() com a passos ADDICIONALS quan
+    # reset_num_timesteps=False (internament fa total_timesteps += model.num_timesteps,
+    # vegeu BaseAlgorithm._setup_learn) -- NO com a objectiu absolut. Cal
+    # restar els passos ja fets perque --total_timesteps segueixi volent dir
+    # "objectiu total" tant si es comença de zero com si es reprèn.
+    if args.resume_from:
+        passos_restants = max(0, args.total_timesteps - model.num_timesteps)
+        if passos_restants == 0:
+            print(f"Ja s'ha arribat a l'objectiu ({model.num_timesteps:,} >= {args.total_timesteps:,}). Res a fer.")
+            return
+    else:
+        passos_restants = args.total_timesteps
+
     model.learn(
-        total_timesteps=args.total_timesteps,
+        total_timesteps=passos_restants,
         callback=checkpoint_cb,
         reset_num_timesteps=(args.resume_from is None),
     )
