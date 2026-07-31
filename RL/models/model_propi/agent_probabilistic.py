@@ -67,6 +67,23 @@ class AgentProbabilistic:
             # Fora de l'abast (apostes/senyes actives): delega a AgentRegles.
             return self._fallback.eval_step(state)
 
+        valors = self.avaluar_opcions(state)
+        millor_valor = max(valors.values())
+        millors_cartes = [c for c, v in valors.items() if abs(v - millor_valor) <= 1e-9]
+
+        own_hand = list(state['raw_obs']['ma_jugador'])
+        carta_triada = self.rng.choice(millors_cartes)
+        idx = own_hand.index(carta_triada)
+        action = ACTION_SPACE[f'play_card_{idx}']
+        if action not in legal:
+            action = legal[0]
+        return action, {'valor': millor_valor, 'valors_totes': valors}
+
+    def avaluar_opcions(self, state) -> dict:
+        """Retorna {carta: valor_esperat} per a totes les cartes jugables a
+        la mà actual (no només la millor) -- útil per analitzar decisions
+        d'altres agents comparant-les amb el valor gairebé òptim d'aquest
+        solver."""
         raw = state['raw_obs']
         root = raw['id_jugador']
         opp = 1 - root
@@ -86,8 +103,7 @@ class AgentProbabilistic:
 
         self._cache = {}
 
-        millor_valor = None
-        millors_cartes: list[str] = []
+        valors: dict = {}
         for card in own_hand:
             nova_ma = [c for c in own_hand if c != card]
             nova_taula = taula + [(root, card)]
@@ -106,19 +122,9 @@ class AgentProbabilistic:
                 total += valor
                 n_hip += 1
 
-            mitjana = total / n_hip if n_hip else 0.0
-            if millor_valor is None or mitjana > millor_valor + 1e-9:
-                millor_valor = mitjana
-                millors_cartes = [card]
-            elif abs(mitjana - millor_valor) <= 1e-9:
-                millors_cartes.append(card)
+            valors[card] = total / n_hip if n_hip else 0.0
 
-        carta_triada = self.rng.choice(millors_cartes)
-        idx = own_hand.index(carta_triada)
-        action = ACTION_SPACE[f'play_card_{idx}']
-        if action not in legal:
-            action = legal[0]
-        return action, {'valor': millor_valor}
+        return valors
 
     def _minimax(self, hands, ronda_winners, turn_player, taula, ma, root):
         clau = (
